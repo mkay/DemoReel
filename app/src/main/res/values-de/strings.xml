@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Screens -->
+    <string name="screen_library">Bibliothek</string>
+    <string name="screen_settings">Einstellungen</string>
+    <string name="screen_player">Player</string>
+    <string name="screen_editor">Infos bearbeiten</string>
+
+    <!-- Library -->
+    <string name="library_tab_all">Dateien</string>
+    <string name="library_tab_favourites">Favoriten</string>
+    <string name="library_no_folder">Noch kein Ordner gewählt. Wähle den Ordner, in dem deine
+        Demomixe liegen — nur dieser Ordner erscheint hier.</string>
+    <string name="library_empty">Dieser Ordner ist leer.</string>
+    <string name="favourites_empty">Noch nichts markiert. Tippe den Stern eines Mixes an, um ihn hier
+        zu behalten.</string>
+    <string name="player_no_waveform">Dieses Gerät kann die Datei nicht dekodieren — es gibt nichts
+        zu zeichnen und nichts abzuspielen.</string>
+
+    <!-- Actions -->
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_create">Anlegen</string>
+    <string name="action_save">Speichern</string>
+    <string name="action_discard">Verwerfen</string>
+    <string name="action_keep_editing">Weiter bearbeiten</string>
+    <string name="action_edit_info">Infos bearbeiten</string>
+    <string name="action_copy_image">Bild kopieren</string>
+    <string name="action_choose_image">Bild wählen</string>
+    <string name="action_change_image">Bild ändern</string>
+    <string name="action_paste_image">Bild einfügen</string>
+    <string name="action_remove_image">Bild entfernen</string>
+    <string name="action_rename">Umbenennen</string>
+    <string name="action_delete">Löschen</string>
+    <string name="action_share">Teilen</string>
+    <string name="action_move_to">Verschieben nach…</string>
+    <string name="action_move_here">Hierher verschieben</string>
+    <string name="action_choose_folder">Ordner wählen</string>
+    <string name="action_change_folder">Ordner ändern</string>
+    <string name="action_not_now">Später</string>
+
+    <!-- Dialogs -->
+    <string name="folder_new_title">Neuer Ordner</string>
+    <string name="rename_title">Umbenennen</string>
+    <string name="delete_one_title">Löschen?</string>
+    <string name="delete_one_message">%1$s wird gelöscht. Das lässt sich nicht rückgängig
+        machen.</string>
+    <plurals name="delete_many_title">
+        <item quantity="one">%1$d Element löschen?</item>
+        <item quantity="other">%1$d Elemente löschen?</item>
+    </plurals>
+    <plurals name="count_mixes">
+        <item quantity="one">%1$d Mix</item>
+        <item quantity="other">%1$d Mixe</item>
+    </plurals>
+    <plurals name="count_folders">
+        <item quantity="one">%1$d Ordner</item>
+        <item quantity="other">%1$d Ordner</item>
+    </plurals>
+    <string name="delete_many_mixes">%1$s wird gelöscht. Das lässt sich nicht rückgängig
+        machen.</string>
+    <string name="delete_many_folders">%1$s wird mitsamt Inhalt gelöscht. Das lässt sich nicht
+        rückgängig machen.</string>
+    <string name="delete_many_both">%1$s und %2$s werden gelöscht, Ordner mitsamt Inhalt. Das lässt
+        sich nicht rückgängig machen.</string>
+    <plurals name="selection_count">
+        <item quantity="one">%1$d ausgewählt</item>
+        <item quantity="other">%1$d ausgewählt</item>
+    </plurals>
+
+    <string name="folder_choose_title">Wähle deinen Mix-Ordner</string>
+    <string name="folder_choose_body">Demo Reel sieht ausschließlich den Ordner, den du hier wählst.
+        Nichts anderes auf diesem Gerät — keine andere Musik, keine Podcasts, keine Sprachnotizen —
+        kann in der Bibliothek auftauchen, weil nichts anderes je angefragt wird.</string>
+    <string name="folder_missing_title">Ordner nicht verfügbar</string>
+    <string name="folder_missing_body">%1$s erreicht den zugewiesenen Ordner nicht mehr. Er wurde
+        vielleicht verschoben, ausgehängt oder die Berechtigung entzogen. Wähle ihn erneut, um
+        weiterzumachen.</string>
+
+    <string name="move_title_one">Verschieben nach…</string>
+    <plurals name="move_title_many">
+        <item quantity="one">%1$d Element verschieben nach…</item>
+        <item quantity="other">%1$d Elemente verschieben nach…</item>
+    </plurals>
+    <string name="move_up_one_level">Eine Ebene höher</string>
+    <string name="move_no_subfolders">Hier gibt es keine Ordner.</string>
+
+    <string name="share_mix_title">Mix teilen</string>
+
+    <!-- Tag editor -->
+    <string name="field_title">Titel</string>
+    <string name="field_artist">Interpret</string>
+    <string name="field_album">Album</string>
+    <string name="field_album_artist">Album-Interpret</string>
+    <string name="field_year">Jahr</string>
+    <string name="field_track">Track</string>
+    <string name="field_genre">Genre</string>
+    <string name="field_comment">Kommentar</string>
+    <string name="editor_use_defaults">Aus Vorgaben füllen…</string>
+    <string name="editor_rewrite_notice">Speichern schreibt die Datei neu. Das Audiomaterial wird
+        unverändert kopiert — nur die Informationen davor ändern sich.</string>
+    <string name="editor_unsupported">Demo Reel kann Tags nur in MP3- und FLAC-Dateien schreiben.
+        Diese hier lässt sich weiterhin abspielen, umbenennen und als Favorit markieren.</string>
+    <string name="editor_unreadable">Diese Datei ist nicht das Format, das ihr Name behauptet — ihre
+        Tags lassen sich weder lesen noch gefahrlos neu schreiben.</string>
+    <string name="editor_discard_title">Änderungen verwerfen?</string>
+    <string name="editor_discard_body">Deine Änderungen wurden noch nicht in die Datei
+        geschrieben.</string>
+
+    <string name="apply_defaults_title">Vorgaben anwenden</string>
+    <string name="apply_defaults_body">Was soll mit Feldern passieren, in denen schon etwas steht?
+        Eine leere Vorgabe wird nie geschrieben — es geht also nichts verloren.</string>
+    <string name="apply_defaults_fill">Nur Leeres füllen</string>
+    <string name="apply_defaults_replace">Vorhandenes ersetzen</string>
+
+    <!-- Settings -->
+    <string name="settings_tab_library">Bibliothek</string>
+    <string name="settings_tab_defaults">Vorgaben</string>
+    <string name="settings_tab_about">Über</string>
+    <string name="defaults_intro">Einmal setzen und auf beliebig viele Mixe stempeln — ein Ordner
+        voll unbetagter Bounces ist eine Aktion statt dreißig.</string>
+    <string name="defaults_section_cover">Standard-Cover</string>
+    <string name="defaults_section_fields">Standardfelder</string>
+    <string name="setting_title_from_filename_title">Titel aus Dateiname</string>
+    <string name="setting_title_from_filename_detail">Hat ein Mix keinen Titel, wird sein Dateiname
+        genommen. Ein vorhandener Titel wird nie ersetzt.</string>
+    <string name="defaults_how_to_apply">Zum Anwenden: bei einem Mix „Infos bearbeiten“ öffnen und
+        „Aus Vorgaben füllen“ drücken — oder in der Bibliothek Mixe lange antippen, auswählen und den
+        Tag-Knopf benutzen.</string>
+    <string name="settings_section_folder">Ordner</string>
+    <string name="settings_folder_none">Kein Ordner gewählt</string>
+    <string name="settings_folder_detail">Der einzige Ordner, den diese App sehen kann. Ein Wechsel
+        richtet die Bibliothek woandershin aus; nichts wird verschoben oder kopiert.</string>
+    <string name="settings_section_library">Bibliothek</string>
+    <string name="setting_favourites_first_title">Favoriten zuerst</string>
+    <string name="setting_favourites_first_detail">Markierte Mixe an den Anfang ihres Ordners holen.
+        Aus lässt jeden Ordner in Datumsreihenfolge.</string>
+    <string name="settings_section_display">Anzeige</string>
+    <string name="setting_keep_screen_on_title">Bildschirm anlassen</string>
+    <string name="setting_keep_screen_on_detail">Hält das Display wach, solange die App vorne ist.
+        Kostet Akku; aus ist richtig, außer du siehst der Wellenform zu.</string>
+    <string name="setting_theme">Erscheinungsbild</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="setting_language">Sprache</string>
+    <string name="language_system">Systemsprache</string>
+
+    <!-- Drawer -->
+    <string name="drawer_recently_opened">Zuletzt geöffnet</string>
+
+    <!-- About -->
+    <string name="about_version">Version %1$s</string>
+    <string name="about_version_copied">Version kopiert</string>
+    <string name="about_section_about">Über</string>
+    <string name="about_body">Ein Player und Tag-Editor für deine eigenen Demomixe. Er liest einen
+        Ordner, zeigt was darin liegt, spielt es ab, und schreibt Interpret, Cover und den Rest in
+        die Dateien selbst.</string>
+    <string name="about_section_privacy">Datenschutz</string>
+    <string name="about_privacy_body">Demo Reel fordert überhaupt keine Berechtigungen an. Kein
+        Zugriff auf die Medienbibliothek des Geräts, kein Netzwerkzugriff, keine Analyse. Der Ordner,
+        den du freigibst, ist alles, was die App sehen kann.</string>
+    <string name="about_section_website">Quelltext</string>
+    <string name="about_website_body">Die ganze App, freie Software.</string>
+    <string name="about_section_bugs">Fehler und Wünsche</string>
+    <string name="about_bugs_body">Etwas kaputt, oder fehlt dir etwas? Der Issue-Tracker ist der
+        richtige Ort.</string>
+    <string name="about_section_license">Lizenz</string>
+    <string name="about_license">Veröffentlicht unter der GNU General Public License, Version 3. Du
+        darfst sie nutzen, studieren, weitergeben und verändern — solange alles, was du weitergibst,
+        dieselben Freiheiten mitbringt.</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_menu">Menü</string>
+    <string name="cd_more">Mehr</string>
+    <string name="cd_play">Abspielen</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_stop">Stopp</string>
+    <string name="cd_close_player">Player schließen</string>
+    <string name="cd_back">Zurück</string>
+    <string name="cd_apply_defaults">Vorgaben anwenden</string>
+    <string name="cd_change_cover">Cover ändern</string>
+    <string name="cd_remove_cover">Cover entfernen</string>
+    <string name="cd_paste_cover">Cover aus der Zwischenablage einfügen</string>
+    <string name="cd_new_subfolder">Neuer Ordner</string>
+    <string name="cd_favourite">Favorit</string>
+    <string name="cd_not_favourite">Kein Favorit</string>
+    <string name="cd_make_favourite">Als Favorit markieren</string>
+    <string name="cd_unfavourite">Aus den Favoriten entfernen</string>
+    <string name="cd_selected">Ausgewählt</string>
+    <string name="cd_not_selected">Nicht ausgewählt</string>
+    <string name="cd_cancel_selection">Auswahl aufheben</string>
+    <string name="cd_move_selected">Auswahl verschieben</string>
+    <string name="cd_delete_selected">Auswahl löschen</string>
+
+    <!-- Messages -->
+    <string name="msg_folder_not_kept">Android hat die Berechtigung für diesen Ordner nicht behalten.
+        Bitte wähle ihn erneut.</string>
+    <string name="msg_folder_not_created">Dieser Ordner konnte nicht angelegt werden.</string>
+    <string name="msg_not_renamed">Das konnte nicht umbenannt werden.</string>
+    <string name="msg_not_deleted">Das konnte nicht gelöscht werden.</string>
+    <string name="msg_not_moved">Das konnte nicht verschoben werden.</string>
+    <string name="msg_moved_one">Nach %1$s verschoben.</string>
+    <plurals name="msg_moved_many">
+        <item quantity="one">%1$d Element nach %2$s verschoben.</item>
+        <item quantity="other">%1$d Elemente nach %2$s verschoben.</item>
+    </plurals>
+    <plurals name="msg_moved_partly">
+        <item quantity="one">Nur %1$d Element konnte verschoben werden.</item>
+        <item quantity="other">Nur %1$d Elemente konnten verschoben werden.</item>
+    </plurals>
+    <string name="msg_choose_folder_first">Wähle zuerst einen Ordner.</string>
+    <string name="msg_not_played">Diese Datei konnte nicht abgespielt werden.</string>
+    <string name="msg_mix_gone">Diesen Mix gibt es nicht mehr.</string>
+    <string name="msg_looping">Wiederholung an.</string>
+    <string name="msg_loop_off">Wiederholung aus.</string>
+    <string name="msg_tags_saved">Gespeichert.</string>
+    <string name="msg_tags_not_saved">Die Informationen konnten nicht gespeichert werden.</string>
+    <string name="msg_image_unreadable">Dieses Bild konnte nicht gelesen werden.</string>
+    <string name="msg_cover_copied">Cover kopiert.</string>
+    <string name="msg_cover_not_copied">Dieses Cover konnte nicht kopiert werden.</string>
+    <string name="msg_no_cover_to_copy">Dieser Mix hat kein Cover zum Kopieren.</string>
+    <string name="msg_no_image_on_clipboard">In der Zwischenablage ist kein Bild.</string>
+    <string name="msg_defaults_none_applicable">Bei keiner dieser Dateien lassen sich die Tags neu
+        schreiben.</string>
+    <plurals name="msg_defaults_applied">
+        <item quantity="one">Auf %1$d Mix angewendet.</item>
+        <item quantity="other">Auf %1$d Mixe angewendet.</item>
+    </plurals>
+    <plurals name="msg_defaults_applied_some">
+        <item quantity="one">Auf %1$d Mix angewendet; der Rest hatte Formate, die sich nicht taggen
+            lassen.</item>
+        <item quantity="other">Auf %1$d Mixe angewendet; der Rest hatte Formate, die sich nicht
+            taggen lassen.</item>
+    </plurals>
+    <plurals name="msg_defaults_partly">
+        <item quantity="one">Nur %1$d Mix konnte geschrieben werden.</item>
+        <item quantity="other">Nur %1$d Mixe konnten geschrieben werden.</item>
+    </plurals>
+
+    <!-- Storage failures -->
+    <string name="error_no_folder_chosen">Es wurde noch kein Ordner gewählt.</string>
+    <string name="error_folder_unreachable">Dieser Ordner ist nicht erreichbar.</string>
+    <string name="error_folder_unreadable">Dieser Ordner konnte nicht gelesen werden.</string>
+    <string name="error_cannot_read_file">Diese Datei konnte nicht gelesen werden.</string>
+    <string name="error_no_decoder">Dieses Gerät hat keinen Decoder für diese Datei.</string>
+    <string name="error_cannot_write_into_folder">In diesen Ordner kann nichts geschrieben
+        werden.</string>
+    <string name="error_copy_not_written">Die Kopie konnte nicht geschrieben werden.</string>
+    <string name="error_original_not_removed">Die Kopie wurde erstellt, das Original ließ sich aber
+        nicht entfernen — es wurde nichts geändert.</string>
+    <string name="error_folders_cannot_move">Ordner lassen sich nicht zwischen Speicherorten
+        verschieben.</string>
+    <string name="error_cannot_write_file">In diese Datei konnte nicht geschrieben werden.</string>
+    <string name="error_tags_unsupported_format">Nur bei MP3- und FLAC-Dateien lassen sich die Tags
+        neu schreiben.</string>
+    <string name="error_tags_file_malformed">Diese Datei ist nicht das Format, das ihr Name
+        behauptet.</string>
+    <string name="error_tags_not_written">Die Datei wurde geschrieben, ließ sich aber nicht wieder
+        einlesen.</string>
+
+</resources>

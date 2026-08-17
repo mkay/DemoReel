@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one place this app hands anything out to another app: a single cover image, in the cache,
+  copied there by "Copy image" so the clipboard has something to point at.
+
+  Deliberately not the granted mixes folder. Those files are reached through the user's own SAF
+  grant and are shared by uri from the share sheet, which carries its own per-share permission —
+  nothing needs a provider path into them, and giving one would be a second, weaker door onto the
+  same files.
+-->
+<paths>
+    <cache-path name="shared-covers" path="shared/" />
+</paths>

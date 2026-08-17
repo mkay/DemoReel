@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      No permissions at all, and that is the app's whole premise. Demo Reel reads one folder the
+      user hands it through the Storage Access Framework and nothing else — no READ_MEDIA_AUDIO, so
+      the ringtones, the podcasts and the rest of the device's music cannot leak into the library
+      even by accident. The grant is the boundary; there is no wider one to fall back on.
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DemoReel">
+
+        <!--
+            Not a service that ever runs — it is disabled, and exists only to carry the meta-data
+            below. That flag is how AppCompat is told to persist the language chosen in Settings.
+
+            Without it the choice survives only until the process dies. Android 13 and up hides
+            that: there the framework stores the per-app language itself, so the bug is invisible
+            on a modern device and shows up only on 8 to 12 — which is the entire span AppCompat
+            was added for.
+        -->
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+
+        <!--
+            Serves exactly one file: the cover image that "Copy image" puts on the clipboard, so
+            that whatever pastes it has something readable to point at. A clipboard entry is a uri,
+            and a uri into an app's own cache is unreadable to anyone else without a provider.
+
+            Not exported, and it grants nothing by itself — the clipboard hands out a read
+            permission scoped to the one uri, for as long as that clip is on it. See
+            [de.singular.player.storage.ImageClipboard].
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="portrait"
+            android:exported="true"
+            tools:ignore="LockedOrientationActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

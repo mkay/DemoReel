@@ -1,0 +1,21 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+PLAN.md
+*.apk
+*.idsig
+.kotlin
+/app/release
+*.hprof
+
+# Signing material, none of which exists yet — here so it cannot be added by accident later.
+*.jks
+*.keystore
+keystore.properties

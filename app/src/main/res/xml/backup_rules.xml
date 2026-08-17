@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What survives a backup and restore: the preferences, which is where the favourites, the recents
+  and the tag defaults live. The audio never does — it is in the user's own folder, reached through
+  a grant that a restored device does not hold.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+</full-backup-content>
