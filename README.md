@@ -1,6 +1,7 @@
-<img src="docs/icon.png" width="96" align="right" alt="">
-
-# Demo Reel
+<h1>
+  <img src="docs/icon.png" alt="Demo Reel icon" height="52" align="middle" />
+  Demo Reel
+</h1>
 
 An Android player and tag editor for your own demo mixes.
 
