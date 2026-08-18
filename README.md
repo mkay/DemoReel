@@ -5,7 +5,9 @@
 
 An Android player and tag editor for your own demo mixes. This is not a traditional music player.
 
-This is another app I built for myself. I use it for managing my own demos and mixes without the device's media/music library spilling into it. It might only be useful if you are a recording musician or otherwise have to manage lots of audio files. 
+This is another app I built for myself. I use it to manage my own demos and mixes without the
+device's media library spilling into them. It is probably only useful if you are a recording
+musician, or otherwise have a lot of audio files to organise.
 
 It reads **one folder** — the one you point it at — and nothing else. No `READ_MEDIA_AUDIO`, no
 media-library access, no network, no analytics. The ringtones, the podcasts, the voice memos and
@@ -63,10 +65,6 @@ remembered:
   never touched, and the tags and cover are carried across.
 - **Note.** A line about the take, kept in the file's **comment tag** rather than in a database of
   ours, so it travels with the mix to a desktop and back. It shows under the title once it is there.
-
-**The mark at the top of the library turns while something is playing**, and tapping it walks back
-to the top folder — a record that is not moving is a record that is not playing, and the one thing
-always on that screen may as well be the way home.
 
 ---
 
