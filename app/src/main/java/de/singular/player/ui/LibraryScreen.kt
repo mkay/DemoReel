@@ -4,6 +4,9 @@ package de.singular.player.ui
 
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +17,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -62,10 +67,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -127,15 +135,23 @@ fun LibraryScreen(
     Column(modifier.fillMaxSize()) {
         // The lockup heads the whole screen rather than the listing, so it stays put when the tabs
         // are switched — a mark that moved or vanished on the way to the favourites would read as
-        // part of the list rather than as the top of the app. Decorative: the bar already names
-        // this screen, and the wordmark says the same word again in a picture.
-        Image(
-            painter = painterResource(R.drawable.ic_wordmark),
-            contentDescription = null,
+        // part of the list rather than as the top of the app.
+        Wordmark(
+            spinning = playback.playing,
+            // Home is the top of the tree, which is only somewhere to go from a sub-folder or from
+            // the favourites. At the root of the files tab the mark is already showing where you
+            // are, and a tap that changes nothing is worse than one that does not offer itself.
+            onHome = if (tab != LibraryTab.ALL || state.path.size > 1) {
+                {
+                    onTabChange(LibraryTab.ALL)
+                    onBreadcrumb(0)
+                }
+            } else {
+                null
+            },
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
-                .padding(top = 8.dp, bottom = 4.dp)
-                .height(WordmarkHeight),
+                .padding(top = 8.dp, bottom = 4.dp),
         )
 
         // Hidden while picking: the contextual bar has taken the top of the screen, and switching
@@ -292,6 +308,73 @@ fun LibraryScreen(
                     Text(stringResource(R.string.action_cancel))
                 }
             },
+        )
+    }
+}
+
+/**
+ * The lockup at the top of the library: the disc, the word beside it, and both of the jobs a mark
+ * at the top of a screen can do.
+ *
+ * **It turns while something is playing.** The mark is a record, and a record that is not moving is
+ * a record that is not playing — so the screen says what the transport says, in the one place the
+ * eye lands on first.
+ *
+ * Drawn in three layers rather than as one rotating image, because two parts of it must not turn.
+ * The flat lockup is the ground, so the *word* stays level; a second copy of the disc turns over
+ * it — same circle, same size, so it covers the still one exactly; and the play triangle from the
+ * hub goes back on top, held still, because a record spins and a play button does not. A triangle
+ * going round with the grooves would read as a loading spinner.
+ *
+ * **It is Home when there is a home to go to.** Tapping it walks back to the root of the granted
+ * folder, and off the favourites tab if that is where you were — the breadcrumb can do the same,
+ * but only one crumb at a time and only once it is wide enough to hit.
+ *
+ * Decorative to a screen reader when it is only a mark; it takes a label once it is also a button,
+ * because then it is a control and unlabelled controls are unreachable. The bar already names this
+ * screen either way, and the wordmark says the same word again in a picture.
+ */
+@Composable
+private fun Wordmark(spinning: Boolean, onHome: (() -> Unit)?, modifier: Modifier = Modifier) {
+    // An Animatable rather than an infinite transition, because the disc has to *stop* where it is
+    // and carry on from there: a rotation that snapped back to zero on pause would read as the
+    // player being reset. Each turn is animated on its own and the angle folded back under 360°, so
+    // an afternoon of playback cannot walk a float out of precision.
+    val turn = remember { Animatable(0f) }
+    LaunchedEffect(spinning) {
+        while (spinning) {
+            turn.snapTo(turn.value % 360f)
+            turn.animateTo(turn.value + 360f, tween(SpinMillis, easing = LinearEasing))
+        }
+    }
+
+    val home = stringResource(R.string.cd_library_home)
+    Box(
+        modifier
+            .height(WordmarkHeight)
+            .then(
+                if (onHome == null) {
+                    Modifier
+                } else {
+                    Modifier.clickable(onClick = onHome).semantics { contentDescription = home }
+                },
+            ),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_wordmark),
+            contentDescription = null,
+            modifier = Modifier.fillMaxHeight(),
+        )
+        val disc = Modifier.fillMaxHeight().aspectRatio(1f)
+        Image(
+            painter = painterResource(R.drawable.ic_wordmark_reel),
+            contentDescription = null,
+            modifier = disc.graphicsLayer { rotationZ = turn.value },
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_wordmark_play),
+            contentDescription = null,
+            modifier = disc,
         )
     }
 }
@@ -589,6 +672,13 @@ private fun SelectionTick(selected: Boolean) {
  * more than one row. The drawable keeps its own aspect, so this is the only number the header needs.
  */
 private val WordmarkHeight = 64.dp
+
+/**
+ * One turn of the disc, in milliseconds. A 12" at 33 rpm is 1.8 seconds a turn, which at this size
+ * is a blur; slow enough to read as motion rather than as spin is the point, so this is a third of
+ * that speed.
+ */
+private const val SpinMillis = 5400
 
 private val RowPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
 private val LeadingSlot = 44.dp

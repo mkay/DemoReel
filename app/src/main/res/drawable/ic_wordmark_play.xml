@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: CC-BY-4.0
+  Copyright (C) 2026 Kreuder <mk@singular.de>
+
+  The play triangle out of the disc's hub, alone, on the disc's own 1495-unit canvas.
+
+  Its own drawable so it can be held still while @drawable/ic_wordmark_reel turns underneath it: a
+  record spins, a play button does not, and a triangle going round with the grooves reads as a
+  loading spinner rather than as a mark. Everything is at the coordinates it was drawn at, so the
+  two are stacked at the same size and need no alignment of their own.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1495"
+    android:viewportHeight="1495">
+
+    <path
+        android:fillColor="#CAD5E2"
+        android:pathData="M696.931 655.444C696.931 651.488 701.307 649.099 704.635 651.238L845.27 741.646C848.331 743.614 848.331 748.09 845.27 750.058L704.635 840.466C701.307 842.605 696.931 840.216 696.931 836.26V655.444Z" />
+</vector>

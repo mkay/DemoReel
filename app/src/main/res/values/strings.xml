@@ -190,6 +190,7 @@
     <string name="cd_remove_cover">Remove cover</string>
     <string name="cd_paste_cover">Paste cover from clipboard</string>
     <string name="cd_new_subfolder">New folder</string>
+    <string name="cd_library_home">Back to the top folder</string>
     <string name="cd_favourite">Favourite</string>
     <string name="cd_not_favourite">Not a favourite</string>
     <string name="cd_make_favourite">Mark as favourite</string>
