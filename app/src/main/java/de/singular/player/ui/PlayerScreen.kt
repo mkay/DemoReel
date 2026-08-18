@@ -5,6 +5,7 @@ package de.singular.player.ui
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -14,15 +15,21 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
@@ -31,13 +38,19 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +59,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -54,6 +68,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -62,13 +77,19 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import de.singular.player.OpenMix
 import de.singular.player.PlaybackState
 import de.singular.player.R
+import de.singular.player.audio.AudioTarget
 import de.singular.player.audio.Envelope
+import de.singular.player.audio.NormalizeMode
 import de.singular.player.storage.Mix
 import kotlin.math.abs
 import kotlin.math.max
@@ -100,6 +121,13 @@ fun PlayerScreen(
     onToggleLoop: () -> Unit,
     onEditTags: () -> Unit,
     onCopyCover: () -> Unit,
+    /** What this device can write a copy as — see [de.singular.player.audio.AudioTarget]. */
+    targets: List<AudioTarget>,
+    /** True while a file is being rewritten: the two edits that rewrite one must not overlap. */
+    busy: Boolean,
+    onNormalize: (NormalizeMode, AudioTarget, Boolean) -> Unit,
+    onConvert: (AudioTarget) -> Unit,
+    onSaveNote: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mix = open.mix
@@ -116,6 +144,8 @@ fun PlayerScreen(
         1L,
         if (loaded && playback.durationMs > 0) playback.durationMs else mix.durationMs,
     )
+
+    var noting by remember(mix.uri) { mutableStateOf(false) }
 
     Column(
         modifier
@@ -175,6 +205,25 @@ fun PlayerScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        // The note, where the mix describes itself: under the title, with the rest of what the file
+        // says about itself, rather than in a panel of its own. Absent when there is none — an
+        // empty line reserved for text that is usually not there is a gap the layout has to
+        // explain — and tappable, because the thing you are reading is the thing you want to edit.
+        if (open.note.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                open.note,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clickable(enabled = mix.tagFormat != null) { noting = true }
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+
         // The waveform takes whatever is left: this is what the screen is for below the cover, and a
         // fixed strip in the middle of an empty half-page reads as a placeholder.
         Box(
@@ -207,7 +256,18 @@ fun PlayerScreen(
             Text(formatDuration(durationMs), style = MaterialTheme.typography.bodySmall)
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+        PlayerTools(
+            mix = mix,
+            targets = targets,
+            busy = busy,
+            hasNote = open.note.isNotEmpty(),
+            onNote = { noting = true },
+            onNormalize = onNormalize,
+            onConvert = onConvert,
+        )
+
+        Spacer(Modifier.height(12.dp))
         // Every tap acts at once, and a second tap inside the double-tap window means "from the
         // top". Compose's own double-click would hold the *first* tap back to see whether a second
         // one is coming, which is a fifth of a second of nothing happening on the one button that
@@ -240,6 +300,245 @@ fun PlayerScreen(
             onLongClick = onToggleLoop,
         )
     }
+
+    if (noting) {
+        NoteDialog(
+            initial = open.note,
+            onSave = {
+                noting = false
+                onSaveNote(it)
+            },
+            onDismiss = { noting = false },
+        )
+    }
+}
+
+/**
+ * What can be done *to* the open mix, rather than with it — side by side above the transport, where
+ * they can be seen rather than remembered.
+ *
+ * **Note is here and not in the overflow menu**, which is the opposite of where Rename ended up,
+ * and the difference is what the two are. Rename is an action on a file, and the menu is where
+ * every file action lives. A note is *content* — the only thing on this screen a person writes
+ * rather than does — and content nobody can find is content nobody writes.
+ */
+@Composable
+private fun PlayerTools(
+    mix: Mix,
+    targets: List<AudioTarget>,
+    busy: Boolean,
+    hasNote: Boolean,
+    onNote: () -> Unit,
+    onNormalize: (NormalizeMode, AudioTarget, Boolean) -> Unit,
+    onConvert: (AudioTarget) -> Unit,
+) {
+    // Null until a mode is picked, then holds it while the second question is answered.
+    var mode by remember { mutableStateOf<NormalizeMode?>(null) }
+    var levelling by remember { mutableStateOf(false) }
+    var converting by remember { mutableStateOf(false) }
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ToolButton(
+            text = stringResource(R.string.tool_level),
+            icon = ImageVector.vectorResource(R.drawable.ic_graphic_eq),
+            // A rewrite takes a moment on a long mix, and the spinner sits in the button that
+            // started it rather than somewhere else on the screen.
+            busy = busy,
+            enabled = !busy,
+            onClick = { levelling = true },
+        )
+        ToolButton(
+            text = stringResource(R.string.tool_convert),
+            icon = Icons.Default.SwapHoriz,
+            busy = false,
+            enabled = !busy && targets.isNotEmpty(),
+            onClick = { converting = true },
+        )
+        ToolButton(
+            text = stringResource(R.string.tool_note),
+            // A bubble with writing in it against an empty one with a plus: the icon carries the
+            // state, so the label does not have to change length under the thumb as a note is
+            // saved — and a button whose width moves when you use it reads as a different button.
+            icon = if (hasNote) Icons.AutoMirrored.Filled.Comment else Icons.Default.AddComment,
+            busy = false,
+            // A format this app cannot re-tag has nowhere to keep a note; the editor refuses those
+            // for the same reason.
+            enabled = !busy && mix.tagFormat != null,
+            tint = if (hasNote) MaterialTheme.colorScheme.primary else null,
+            onClick = onNote,
+        )
+    }
+
+    // Two questions, one at a time: how loud, then what to do with the result. Every combination in
+    // one dialog would be a grid to read; two lists are two glances.
+    if (levelling) {
+        ChoiceDialog(
+            title = stringResource(R.string.level_title),
+            body = { Text(stringResource(R.string.level_body), style = DialogBody) },
+            options = listOf(
+                stringResource(R.string.level_peak) to {
+                    mode = NormalizeMode.PEAK
+                    levelling = false
+                },
+                stringResource(R.string.level_loudness) to {
+                    mode = NormalizeMode.LOUDNESS
+                    levelling = false
+                },
+            ),
+            onDismiss = { levelling = false },
+        )
+    }
+
+    mode?.let { chosen ->
+        // Overwriting is only on offer when the mix is already in a format this app writes: putting
+        // the level back into an m4a would mean encoding it as something else and calling the
+        // result the same file, which is not what "overwrite" means to anyone.
+        val itsOwn = AudioTarget.of(mix.name)?.takeIf { it in targets }
+        val overwriteLabel = stringResource(R.string.action_overwrite_mix)
+        val copyLabels = targets.map { it to stringResource(R.string.action_save_normalised, it.label) }
+        ChoiceDialog(
+            title = stringResource(R.string.level_title),
+            body = {
+                Text(stringResource(R.string.level_where_body), style = DialogBody)
+                if (itsOwn != null) {
+                    Spacer(Modifier.height(8.dp))
+                    // A lossy mix cannot be overwritten without being encoded again, and that costs
+                    // a generation of quality on top of the usual "no undo".
+                    val lossy = itsOwn == AudioTarget.MP3
+                    val before = stringResource(
+                        if (lossy) R.string.level_lossy_before else R.string.level_overwrite_before,
+                    )
+                    val after = stringResource(
+                        if (lossy) R.string.level_lossy_after else R.string.level_overwrite_after,
+                    )
+                    val noUndo = stringResource(R.string.warning_no_undo)
+                    Text(
+                        buildAnnotatedString {
+                            append(before)
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(noUndo) }
+                            append(after)
+                        },
+                        style = DialogBody,
+                    )
+                }
+            },
+            options = buildList {
+                if (itsOwn != null) {
+                    add(
+                        overwriteLabel to {
+                            mode = null
+                            onNormalize(chosen, itsOwn, true)
+                        },
+                    )
+                }
+                for ((target, label) in copyLabels) {
+                    add(
+                        label to {
+                            mode = null
+                            onNormalize(chosen, target, false)
+                        },
+                    )
+                }
+            },
+            onDismiss = { mode = null },
+        )
+    }
+
+    if (converting) {
+        // Its own format is left off the list: a copy of a FLAC as a FLAC is a decode and an encode
+        // to arrive back where it started.
+        val others = targets.filter { it != AudioTarget.of(mix.name) }
+        val labels = others.map { it to stringResource(R.string.action_convert_to, it.label) }
+        val lossy = stringResource(R.string.convert_lossy, AudioTarget.MP3.label)
+        ChoiceDialog(
+            title = stringResource(R.string.convert_title),
+            body = {
+                Text(stringResource(R.string.convert_body), style = DialogBody)
+                if (AudioTarget.MP3 in others) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(lossy, style = DialogBody, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            options = labels.map { (target, label) ->
+                label to {
+                    converting = false
+                    onConvert(target)
+                }
+            },
+            onDismiss = { converting = false },
+        )
+    }
+}
+
+/** One of the three: an icon, a word, and a third of the row. */
+@Composable
+private fun RowScope.ToolButton(
+    text: String,
+    icon: ImageVector,
+    busy: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    tint: Color? = null,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        Modifier.weight(1f).height(48.dp),
+        enabled = enabled,
+        shape = ControlShape,
+        contentPadding = ToolPadding,
+    ) {
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(
+                icon,
+                contentDescription = null,
+                Modifier.size(18.dp),
+                // The accent is the button's own content colour, so saying it changes nothing on
+                // its own — what makes it read as a *state* is being the one icon in the row that
+                // is not the default ink.
+                tint = tint ?: LocalContentColor.current,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * Writing the note: a field, and what becomes of what is typed in it.
+ *
+ * Emptying it is a legitimate answer, so Save is never disabled — unlike [NameDialog], where a
+ * blank name is not a name. Clearing the field and saving removes the comment.
+ */
+@Composable
+private fun NoteDialog(initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable(initial) { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.note_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.note_body), style = DialogBody)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text(stringResource(R.string.note_hint)) },
+                    shape = ControlShape,
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text) }) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
 }
 
 /**
@@ -653,6 +952,12 @@ private enum class GestureMode { NONE, PAN, SCRUB, SCROLLBAR }
  * stops telling you anything more about which mix it is.
  */
 private val CoverSize = 220.dp
+
+/**
+ * A tool button's inset. Tighter than a button's default, because three of them share the width of
+ * one and the default would ellipsise the longest of the three words on a narrow phone.
+ */
+private val ToolPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
 
 /**
  * The waveform's four weights: a body and an outline, each played and unplayed.

@@ -12,7 +12,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
+import de.singular.player.audio.AudioTarget
 import de.singular.player.audio.Envelope
+import de.singular.player.audio.Mp3
+import de.singular.player.audio.NormalizeMode
 import de.singular.player.audio.Tags
 import de.singular.player.storage.Defaults
 import de.singular.player.storage.Favourites
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /**
  * A favourite, with the key it is marked under.
@@ -124,6 +128,13 @@ data class OpenMix(
     /** Null while still being read, and after a read that found nothing drawable. */
     val envelope: Envelope? = null,
     val loadingWaveform: Boolean = true,
+    /**
+     * What is written against this mix — its comment tag, empty for nothing.
+     *
+     * Not taken from [Mix.tags], which is filled by the platform's reader and has no comment in it
+     * at all; this is read out of the container itself when the mix is opened. See [TagIo].
+     */
+    val note: String = "",
 )
 
 /**
@@ -583,10 +594,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _openMix.value = OpenMix(mix)
         waveformJob?.cancel()
         waveformJob = viewModelScope.launch {
+            // The note first: it is one small read against a whole decode, and the chip that shows
+            // it is on screen from the start.
+            val note = store.readTags(mix)?.tags?.comment.orEmpty()
+            if (_openMix.value?.mix?.uri == mix.uri) {
+                _openMix.update { it?.copy(note = note) }
+            }
             val envelope = store.waveform(mix)
             // The user may have backed out or opened another mix while we were reading.
             if (_openMix.value?.mix?.uri == mix.uri) {
-                _openMix.value = OpenMix(mix, envelope, loadingWaveform = false)
+                _openMix.update { it?.copy(envelope = envelope, loadingWaveform = false) }
             }
         }
     }
@@ -953,6 +970,118 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             _busy.value = false
         }
     }
+
+    // ---- editing the audio ------------------------------------------------------------------
+
+    /**
+     * The formats a mix can be written out as here, minus any this device cannot manage.
+     *
+     * Asked of the audio layer rather than listed in the UI, because MP3 depends on a native
+     * encoder having loaded — see [Mp3]. A target that would fail is better missing than greyed.
+     */
+    val targets: List<AudioTarget> = AudioTarget.available()
+
+    /**
+     * Lift the open mix to full level, as [target], over the original or beside it.
+     *
+     * A whole-file rewrite, so it takes the same [busy] lock the tag editor does: two of these at
+     * once would be two decodes competing for the same storage, and an overwrite racing a save is
+     * not something to find out about afterwards.
+     */
+    fun normalizeOpenMix(mode: NormalizeMode, target: AudioTarget, overwrite: Boolean) {
+        val mix = _openMix.value?.mix ?: return
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            // The bytes under the system player are about to be replaced; let go of the file first.
+            if (overwrite && _playback.value.uri == mix.uri) stopPlayback()
+            store.normalize(mix, mode, target, overwrite)
+                .onSuccess { rendered ->
+                    _message.value = when {
+                        rendered.gainDb <= 0f -> Message.Text(R.string.msg_level_already_full)
+                        overwrite -> Message.Text(
+                            R.string.msg_level_lifted,
+                            listOf(formatDb(rendered.gainDb)),
+                        )
+
+                        else -> Message.Text(
+                            R.string.msg_level_lifted_copy,
+                            listOf(formatDb(rendered.gainDb), rendered.mix.name),
+                        )
+                    }
+                    if (rendered.mix.uri == mix.uri) reopen(rendered.mix)
+                    afterEdit()
+                }
+                .onFailure { _message.value = Message.of(it, R.string.msg_render_failed) }
+            _busy.value = false
+        }
+    }
+
+    /** Write the open mix out as [target], beside it. Never touches the original. */
+    fun convertOpenMix(target: AudioTarget) {
+        val mix = _openMix.value?.mix ?: return
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            store.convert(mix, target)
+                .onSuccess {
+                    _message.value = Message.Text(R.string.msg_converted, listOf(it.mix.name))
+                    afterEdit()
+                }
+                .onFailure { _message.value = Message.of(it, R.string.msg_render_failed) }
+            _busy.value = false
+        }
+    }
+
+    /**
+     * Write [note] into the open mix's comment tag — empty text clearing it.
+     *
+     * Into the file rather than into a database of ours: a note about a mix belongs to the mix, and
+     * a sidecar would be lost the first time the folder was synced to a desktop. Everything else in
+     * the file is read and written back untouched, so this is the tag editor's save with one field
+     * changed — which is exactly what it is made of.
+     */
+    fun saveNote(note: String) {
+        val mix = _openMix.value?.mix ?: return
+        if (_busy.value || mix.tagFormat == null) return
+        viewModelScope.launch {
+            _busy.value = true
+            val content = store.readTags(mix)
+            if (content == null) {
+                _message.value = Message.Text(R.string.msg_note_not_saved)
+                _busy.value = false
+                return@launch
+            }
+            val trimmed = note.trim()
+            if (_playback.value.uri == mix.uri) stopPlayback()
+            store.writeTags(mix, content.tags.copy(comment = trimmed), content.cover?.let(Artwork::of))
+                .onSuccess { written ->
+                    _message.value = Message.Text(
+                        if (trimmed.isEmpty()) R.string.msg_note_cleared else R.string.msg_note_saved,
+                    )
+                    reopen(written, note = trimmed)
+                    afterEdit()
+                }
+                .onFailure { _message.value = Message.of(it, R.string.msg_note_not_saved) }
+            _busy.value = false
+        }
+    }
+
+    /** The player is showing a file that has just been rewritten; show what it is now. */
+    private fun reopen(mix: Mix, note: String? = null) {
+        _openMix.update { open ->
+            if (open == null) null else open.copy(mix = mix, note = note ?: open.note)
+        }
+    }
+
+    /** Every edit leaves the folder holding something different. */
+    private suspend fun afterEdit() {
+        refresh()
+        if (_favouriteMixes.value != null) loadFavourites()
+    }
+
+    /** "+3.4" — a boost, said the way a fader is labelled. */
+    private fun formatDb(db: Float): String = String.format(Locale.US, "+%.1f", db)
 
     // ---- the defaults -----------------------------------------------------------------------
 

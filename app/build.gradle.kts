@@ -15,7 +15,27 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1"
+
+        // The encoders are only really tested on a device: MediaCodec and the vendored LAME both
+        // are the device. See RenderTest.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The only native code in the app is the MP3 encoder — see src/main/cpp/CMakeLists.txt.
+        // Limited to the ABIs a phone actually ships with plus the emulator's, because each one is
+        // another copy of LAME in the APK and nothing else here is native.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
+        }
+    }
+
+    // Pinned rather than "whatever is installed", so a rebuild of a tagged commit gets the same
+    // compiler — the same reason vcsInfo is off below.
+    ndkVersion = "28.2.13676358"
 
     buildTypes {
         release {
@@ -113,4 +133,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

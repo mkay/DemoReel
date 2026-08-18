@@ -136,6 +136,10 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         AboutSection(R.string.about_section_license) {
             AboutBody(R.string.about_copyright)
             AboutBody(R.string.about_license)
+            // LAME is the one piece of this app somebody else wrote, and the LGPL asks that its use
+            // be said out loud where the user can see it — not only in the repo. Its source sits in
+            // the tree the link below points at, unmodified, which is the other half of the ask.
+            AboutBody(R.string.about_lame)
             AboutLink(REPO_URL) { uriHandler.openUri(REPO_URL) }
         }
     }

@@ -6,9 +6,15 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import de.singular.player.R
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
+import de.singular.player.audio.AudioTarget
 import de.singular.player.audio.Envelope
+import de.singular.player.audio.Gain
+import de.singular.player.audio.Mp3
+import de.singular.player.audio.NormalizeMode
+import de.singular.player.audio.Render
 import de.singular.player.audio.TagFormat
 import de.singular.player.audio.TagIo
 import de.singular.player.audio.Tags
@@ -453,6 +459,163 @@ class MixStore(context: Context) {
         val written = describe(mix.uri)
             ?: return@withContext Result.failure(StorageException(StorageFailure.TAGS_NOT_WRITTEN))
         Result.success(written)
+    }
+
+    // ---- rendering ------------------------------------------------------------------------------
+
+    /**
+     * The result of a normalise or a convert: the file it left behind, and how much it lifted.
+     *
+     * [gainDb] is 0 when nothing was lifted — a convert, or a mix that was already loud enough. The
+     * two are told apart by [mix]: a convert always produces a new file, and a normalise that found
+     * nothing to do hands back the mix it was given, untouched.
+     */
+    data class Rendered(val mix: Mix, val gainDb: Float)
+
+    /**
+     * Lift [mix] to full level and write the result as [target].
+     *
+     * With [overwrite] the original is replaced; otherwise a copy is written beside it, named for
+     * what was done to it. A mix that is already loud enough is left alone either way — rewriting a
+     * whole file, or making a second one, for a fraction of a dB is all cost and no difference.
+     */
+    suspend fun normalize(
+        mix: Mix,
+        mode: NormalizeMode,
+        target: AudioTarget,
+        overwrite: Boolean,
+        into: Uri? = null,
+    ): Result<Rendered> = render(mix, target, mode, overwrite, into)
+
+    /** Write [mix] out as [target], beside it, at the level it already has. */
+    suspend fun convert(
+        mix: Mix,
+        target: AudioTarget,
+        into: Uri? = null,
+    ): Result<Rendered> = render(mix, target, mode = null, overwrite = false, into = into)
+
+    /**
+     * The one path both of them take: decode, measure, encode, put the tags back.
+     *
+     * **The original is never opened for writing until the new audio exists.** An overwrite encodes
+     * into the cache first and copies it over afterwards, for the same reason a re-tag does (see
+     * [writeTags]): a decode that fails half way, a full volume or a killed process would otherwise
+     * leave a mix that is neither the old file nor the new one. A copy is deleted again if anything
+     * goes wrong, rather than being left in the folder for someone to work out.
+     */
+    private suspend fun render(
+        mix: Mix,
+        target: AudioTarget,
+        mode: NormalizeMode?,
+        overwrite: Boolean,
+        into: Uri?,
+    ): Result<Rendered> = withContext(Dispatchers.IO) {
+        if (target == AudioTarget.MP3 && !Mp3.available) {
+            return@withContext Result.failure(StorageException(StorageFailure.NO_ENCODER))
+        }
+        // Read before anything is written: an overwrite replaces the file these come from, and a
+        // copy wants them from the original rather than from what the encoder just wrote.
+        val carried = readableTags(mix)
+
+        val pcm = File(appContext.cacheDir, "render.pcm")
+        val decoded = runCatching { Render.decode(appContext, mix.uri, pcm) }
+            .getOrNull()
+            ?: run {
+                pcm.delete()
+                return@withContext Result.failure(StorageException(StorageFailure.NO_DECODER))
+            }
+
+        val gain = mode?.let { Gain.linearFor(it, decoded.peak, decoded.rms) } ?: 1f
+        val gainDb = Gain.linearToDb(gain)
+        if (mode != null && gainDb < Gain.MIN_USEFUL_BOOST_DB) {
+            pcm.delete()
+            return@withContext Result.success(Rendered(mix, 0f))
+        }
+        val softClip = mode != null && Gain.needsSoftClip(gain, decoded.peak)
+
+        val encoded = File(appContext.cacheDir, "render.out")
+        val wrote = runCatching {
+            encoded.outputStream().buffered(BLOCK).use { out ->
+                Render.encode(decoded, out, target, gain, softClip, appContext.cacheDir)
+            }
+        }
+        pcm.delete()
+        wrote.exceptionOrNull()?.let {
+            encoded.delete()
+            return@withContext Result.failure(it)
+        }
+
+        val destination = if (overwrite) {
+            mix.uri
+        } else {
+            val folder = into ?: parentOf(mix.uri) ?: run {
+                encoded.delete()
+                return@withContext Result.failure(
+                    StorageException(StorageFailure.CANNOT_WRITE_INTO_FOLDER),
+                )
+            }
+            val name = renderedName(mix, target, normalised = mode != null)
+            runCatching {
+                DocumentsContract.createDocument(resolver, folder, target.mime, name)
+            }.getOrNull() ?: run {
+                encoded.delete()
+                return@withContext Result.failure(
+                    StorageException(StorageFailure.CANNOT_WRITE_INTO_FOLDER),
+                )
+            }
+        }
+
+        val placed = runCatching {
+            encoded.inputStream().use { src ->
+                openTruncating(destination).use { dest -> src.copyTo(dest, BLOCK) }
+            }
+        }
+        encoded.delete()
+        placed.exceptionOrNull()?.let {
+            if (!overwrite) runCatching { DocumentsContract.deleteDocument(resolver, destination) }
+            return@withContext Result.failure(it)
+        }
+
+        forget(destination)
+        val written = describe(destination)
+            ?: return@withContext Result.failure(StorageException(StorageFailure.COPY_NOT_WRITTEN))
+
+        // Tags last, and never fatal. The audio is on disk and correct at this point; a file that
+        // arrived without its artist name is a nuisance, while throwing away the encode over it
+        // would be a loss. WAV simply has nowhere to put them.
+        val tagged = carried
+            ?.takeIf { written.tagFormat != null }
+            ?.let { writeTags(written, it.tags, it.cover?.let(Artwork::of)).getOrNull() }
+
+        Result.success(Rendered(tagged ?: written, if (mode == null) 0f else gainDb))
+    }
+
+    /**
+     * What [mix] says about itself, however it has to be asked.
+     *
+     * The exact reader for a format this app parses, so a comment survives a convert; the platform's
+     * reader for everything else, which is lossy but is the only thing that will open an m4a.
+     */
+    private fun readableTags(mix: Mix): TagIo.Content? {
+        mix.tagFormat?.let { format ->
+            runCatching {
+                resolver.openInputStream(mix.uri)?.buffered(BLOCK)?.use { TagIo.read(format, it) }
+            }.getOrNull()?.let { return it }
+        }
+        val tags = Tags.read(appContext, mix.uri) ?: return null
+        return TagIo.Content(tags, Tags.picture(appContext, mix.uri))
+    }
+
+    /**
+     * What to call the file a render leaves behind.
+     *
+     * A normalise says so in the name — the folder ends up holding both versions, and "mix.flac"
+     * next to "mix.flac" distinguished only by loudness is a folder nobody can work in. A convert
+     * keeps the name it had: the extension is already the difference, and it is the whole point.
+     */
+    private fun renderedName(mix: Mix, target: AudioTarget, normalised: Boolean): String {
+        val suffix = if (normalised) " " + appContext.getString(R.string.file_suffix_normalised) else ""
+        return "${mix.baseName}$suffix.${target.extension}"
     }
 
     /**

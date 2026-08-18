@@ -31,6 +31,7 @@ enum class StorageFailure(@StringRes val message: Int) {
     // Reading
     CANNOT_READ_FILE(R.string.error_cannot_read_file),
     NO_DECODER(R.string.error_no_decoder),
+    NO_ENCODER(R.string.error_no_encoder),
 
     // Copying and moving
     CANNOT_WRITE_INTO_FOLDER(R.string.error_cannot_write_into_folder),

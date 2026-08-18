@@ -843,6 +843,11 @@ class MainActivity : AppCompatActivity() {
                                             onToggleLoop = vm::toggleLoop,
                                             onEditTags = { enterEditor(open.mix) },
                                             onCopyCover = { vm.copyCover(open.mix) },
+                                            targets = vm.targets,
+                                            busy = busy,
+                                            onNormalize = vm::normalizeOpenMix,
+                                            onConvert = vm::convertOpenMix,
+                                            onSaveNote = vm::saveNote,
                                             modifier = content,
                                         )
                                     } ?: LaunchedEffect(Unit) { screen = Screen.LIBRARY }

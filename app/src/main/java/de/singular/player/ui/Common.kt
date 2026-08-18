@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -171,6 +173,49 @@ fun NameDialog(
         },
     )
 }
+
+/**
+ * A dialog whose answers are its buttons — a line of explanation, then one full-width choice per
+ * line, and Cancel where a confirm button would be.
+ *
+ * For questions where the *options* are the content: "how loud", "what format". A pair of
+ * confirm/dismiss buttons under a paragraph can only ask a yes-or-no, and turning a three-way
+ * choice into two yes-or-nos is how a dialog ends up asking a question nobody can answer without
+ * reading it twice.
+ */
+@Composable
+fun ChoiceDialog(
+    title: String,
+    body: @Composable () -> Unit,
+    options: List<Pair<String, () -> Unit>>,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                body()
+                options.forEach { (label, onClick) ->
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onClick,
+                        Modifier.fillMaxWidth(),
+                        shape = ControlShape,
+                    ) { Text(label, textAlign = TextAlign.Center) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+/** What a dialog's explanation is set in — one step down from the title, and quiet. */
+val DialogBody
+    @Composable get() = MaterialTheme.typography.bodyMedium
 
 /**
  * A mix's cover, or the mark that stands in for one.

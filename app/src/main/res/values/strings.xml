@@ -176,6 +176,9 @@
     <string name="about_copyright" translatable="false">Copyright © 2026 Kreuder</string>
     <string name="about_license">Released under the GNU General Public License, version 3. You may
         use, study, share and modify it, provided anything you pass on carries the same freedoms.</string>
+    <string name="about_lame">MP3 files are written with LAME, by the LAME developers, used
+        unmodified under the GNU Lesser General Public License, version 2.1. Its source is in this
+        app\'s own repository.</string>
 
     <!-- Content descriptions -->
     <string name="cd_menu">Menu</string>
@@ -252,6 +255,7 @@
     <string name="error_folder_unreadable">That folder could not be read.</string>
     <string name="error_cannot_read_file">That file could not be read.</string>
     <string name="error_no_decoder">This device has no decoder for that file.</string>
+    <string name="error_no_encoder">This device cannot write MP3 files.</string>
     <string name="error_cannot_write_into_folder">Nothing can be written into that folder.</string>
     <string name="error_copy_not_written">The copy could not be written.</string>
     <string name="error_original_not_removed">The copy was made but the original could not be
@@ -262,5 +266,47 @@
         rewritten.</string>
     <string name="error_tags_file_malformed">That file is not the format its name says it is.</string>
     <string name="error_tags_not_written">The file was written but could not be read back.</string>
+
+
+    <!-- The player's tool row: what can be done to the open mix, rather than with it. -->
+    <string name="tool_level">Level</string>
+    <string name="tool_convert">Convert</string>
+    <string name="tool_note">Note</string>
+
+    <string name="level_title">Normalise</string>
+    <string name="level_body">How loud should this mix end up?</string>
+    <string name="level_peak">Peak — as loud as it goes without distorting</string>
+    <string name="level_loudness">Loudness — as loud as it sounds, clipping softly</string>
+    <string name="level_where_body">Where should the louder version go?</string>
+    <string name="level_lossy_before">Overwriting encodes this mix again, which costs a little
+        quality, and </string>
+    <string name="level_lossy_after">.</string>
+    <string name="level_overwrite_before">Overwriting replaces the file, and </string>
+    <string name="level_overwrite_after">.</string>
+    <string name="warning_no_undo">there is no undo</string>
+    <string name="action_overwrite_mix">Overwrite the mix</string>
+    <string name="action_save_normalised">Save a normalised %1$s beside it</string>
+
+    <string name="convert_title">Convert</string>
+    <string name="convert_body">A copy is written beside this mix, at the level it already has.
+        The original is not touched.</string>
+    <string name="convert_lossy">%1$s is lossy: fine to send, not to keep as the master.</string>
+    <string name="action_convert_to">Save a copy as %1$s</string>
+
+    <string name="note_title">Note</string>
+    <string name="note_body">Kept in the file\'s comment tag, so it travels with the mix.</string>
+    <string name="note_hint">What is this take?</string>
+
+    <string name="msg_level_lifted">Lifted by %1$s dB.</string>
+    <string name="msg_level_lifted_copy">Lifted by %1$s dB into %2$s.</string>
+    <string name="msg_level_already_full">Already at full level — nothing to lift.</string>
+    <string name="msg_converted">Written as %1$s.</string>
+    <string name="msg_render_failed">That mix could not be rewritten.</string>
+    <string name="msg_note_saved">Note saved.</string>
+    <string name="msg_note_cleared">Note removed.</string>
+    <string name="msg_note_not_saved">The note could not be saved.</string>
+
+    <!-- Appended to the filename of a normalised copy: "Live set normalised.flac". -->
+    <string name="file_suffix_normalised">normalised</string>
 
 </resources>

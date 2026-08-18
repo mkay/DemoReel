@@ -3,7 +3,9 @@
   Demo Reel
 </h1>
 
-An Android player and tag editor for your own demo mixes.
+An Android player and tag editor for your own demo mixes. This is not a traditional music player.
+
+This is another app I built for myself. I use it for managing my own demos and mixes without the device's media/music library spilling into it. It might only be useful if you are a recording musician or otherwise have to manage lots of audio files. 
 
 It reads **one folder** — the one you point it at — and nothing else. No `READ_MEDIA_AUDIO`, no
 media-library access, no network, no analytics. The ringtones, the podcasts, the voice memos and
@@ -50,6 +52,22 @@ stands in for it, and only ever fills a title that is missing.
 This is the reason the app exists rather than being a player. A folder of bounces arrives with no
 metadata at all, and tagging it one file at a time is what nobody does.
 
+**Three tools on the open mix**, in a row above the transport, where they can be seen rather than
+remembered:
+
+- **Level.** Normalise the mix — *peak*, which lifts the loudest sample to full scale and cannot
+  distort, or *loudness*, which aims at −14 dBFS RMS and bends whatever overshoots through a soft
+  knee. Then: over the original, or as a new file beside it. A mix that is already loud enough is
+  left alone rather than rewritten for a fraction of a dB.
+- **Convert.** A copy as **MP3**, **FLAC** or **WAV**, at the level it already has. The original is
+  never touched, and the tags and cover are carried across.
+- **Note.** A line about the take, kept in the file's **comment tag** rather than in a database of
+  ours, so it travels with the mix to a desktop and back. It shows under the title once it is there.
+
+**The mark at the top of the library turns while something is playing**, and tapping it walks back
+to the top folder — a record that is not moving is a record that is not playing, and the one thing
+always on that screen may as well be the way home.
+
 ---
 
 ## Why a folder grant and not the media library
@@ -77,6 +95,36 @@ about what the mix is. A favourite has to toggle instantly under a thumb.
 
 The trade is that a favourite is invisible from a desktop and does not survive a rename made outside
 the app. Renames and moves made *inside* it are followed.
+
+## Why an MP3 encoder is bundled
+
+Android decodes MP3 on every device and encodes it on none: `MediaCodec` offers AAC and AMR and
+stops there. WAV and FLAC this app writes itself — a RIFF header, and `MediaCodec`'s FLAC frames in
+a container laid out by hand, because `MediaMuxer` has no native `.flac` output either.
+
+MP3 has no such route, and MP3 is what a demo mix is actually sent as. So **LAME 3.100** is
+vendored, unmodified, under `app/src/main/cpp/lame` and built for `arm64-v8a`, `armeabi-v7a` and
+`x86_64` — about 270 KB of native code per ABI. It is LGPL-2.1, which combines with this app's
+GPL-3.0 by way of LGPL-2.1 §3; the notice is on the About screen and the source is in this tree.
+See `audio/Mp3.kt` and `src/main/cpp/mp3.c`.
+
+If it fails to load, MP3 is simply not among the formats offered — a missing option rather than a
+button that fails.
+
+## Why every edit decodes
+
+A WAV lifted by 3 dB could have its samples scaled where they lie, and a FLAC normalised to a FLAC
+could in principle keep its encoder settings. Neither shortcut is taken. Both are a second
+implementation of the same job, differing only in what they get wrong, and this is a player and
+tagger rather than a DAW.
+
+So everything goes through one path: decode to 16-bit PCM in the cache, measure it on the way past,
+write it back out as whatever was asked for. That is also what makes the level known before the
+first sample is written, and a WAV's length known before its header goes down — see `audio/Render.kt`.
+
+Nothing is ever written over an original until the new audio exists whole on disk, for the same
+reason a re-tag builds in the cache first: a decode that fails half way must not leave a mix that is
+neither the old file nor the new one.
 
 ## Why there are two tag readers
 

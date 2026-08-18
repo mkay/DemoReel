@@ -169,6 +169,9 @@
     <string name="about_license">Veröffentlicht unter der GNU General Public License, Version 3. Du
         darfst sie nutzen, studieren, weitergeben und verändern — solange alles, was du weitergibst,
         dieselben Freiheiten mitbringt.</string>
+    <string name="about_lame">MP3-Dateien werden mit LAME geschrieben, von den
+        LAME-Entwicklern, unverändert genutzt unter der GNU Lesser General Public License,
+        Version 2.1. Der Quelltext liegt im Repository dieser App.</string>
 
     <!-- Content descriptions -->
     <string name="cd_menu">Menü</string>
@@ -245,6 +248,7 @@
     <string name="error_folder_unreadable">Dieser Ordner konnte nicht gelesen werden.</string>
     <string name="error_cannot_read_file">Diese Datei konnte nicht gelesen werden.</string>
     <string name="error_no_decoder">Dieses Gerät hat keinen Decoder für diese Datei.</string>
+    <string name="error_no_encoder">Dieses Gerät kann keine MP3-Dateien schreiben.</string>
     <string name="error_cannot_write_into_folder">In diesen Ordner kann nichts geschrieben
         werden.</string>
     <string name="error_copy_not_written">Die Kopie konnte nicht geschrieben werden.</string>
@@ -259,5 +263,49 @@
         behauptet.</string>
     <string name="error_tags_not_written">Die Datei wurde geschrieben, ließ sich aber nicht wieder
         einlesen.</string>
+
+
+    <!-- The player's tool row: what can be done to the open mix, rather than with it. -->
+    <string name="tool_level">Pegel</string>
+    <string name="tool_convert">Umwandeln</string>
+    <string name="tool_note">Notiz</string>
+
+    <string name="level_title">Normalisieren</string>
+    <string name="level_body">Wie laut soll dieser Mix am Ende sein?</string>
+    <string name="level_peak">Spitzenwert — so laut wie möglich ohne Verzerrung</string>
+    <string name="level_loudness">Lautheit — so laut wie es klingt, mit weichem Clipping</string>
+    <string name="level_where_body">Wohin mit der lauteren Fassung?</string>
+    <string name="level_lossy_before">Beim Überschreiben wird dieser Mix neu codiert, was etwas
+        Qualität kostet, und </string>
+    <string name="level_lossy_after">.</string>
+    <string name="level_overwrite_before">Überschreiben ersetzt die Datei, und </string>
+    <string name="level_overwrite_after">.</string>
+    <string name="warning_no_undo">rückgängig geht das nicht</string>
+    <string name="action_overwrite_mix">Mix überschreiben</string>
+    <string name="action_save_normalised">Normalisierte %1$s daneben speichern</string>
+
+    <string name="convert_title">Umwandeln</string>
+    <string name="convert_body">Eine Kopie wird neben diesem Mix angelegt, mit dem Pegel, den er
+        schon hat. Das Original bleibt unangetastet.</string>
+    <string name="convert_lossy">%1$s ist verlustbehaftet: gut zum Verschicken, nicht als
+        Master.</string>
+    <string name="action_convert_to">Kopie als %1$s speichern</string>
+
+    <string name="note_title">Notiz</string>
+    <string name="note_body">Steht im Kommentar-Tag der Datei und wandert damit mit dem Mix
+        mit.</string>
+    <string name="note_hint">Was ist das für eine Fassung?</string>
+
+    <string name="msg_level_lifted">Um %1$s dB angehoben.</string>
+    <string name="msg_level_lifted_copy">Um %1$s dB angehoben, als %2$s.</string>
+    <string name="msg_level_already_full">Schon auf vollem Pegel — nichts anzuheben.</string>
+    <string name="msg_converted">Als %1$s geschrieben.</string>
+    <string name="msg_render_failed">Dieser Mix konnte nicht neu geschrieben werden.</string>
+    <string name="msg_note_saved">Notiz gespeichert.</string>
+    <string name="msg_note_cleared">Notiz entfernt.</string>
+    <string name="msg_note_not_saved">Die Notiz konnte nicht gespeichert werden.</string>
+
+    <!-- Appended to the filename of a normalised copy: "Live set normalisiert.flac". -->
+    <string name="file_suffix_normalised">normalisiert</string>
 
 </resources>
