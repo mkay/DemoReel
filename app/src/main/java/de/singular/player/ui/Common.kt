@@ -378,12 +378,29 @@ private const val DisabledContent = 0.38f
 
 /** A hint in the middle of an empty area — no folder chosen, nothing in this one, nothing marked. */
 @Composable
-fun Hint(text: String, modifier: Modifier = Modifier) {
+fun Hint(
+    text: String,
+    modifier: Modifier = Modifier,
+    /**
+     * The way out of the state being described, when there is one — an empty screen that names the
+     * one thing that would fill it should also be the place to do it, rather than sending someone
+     * off to find the same button in a menu.
+     */
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     Box(modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (action != null && onAction != null) {
+                Spacer(Modifier.height(20.dp))
+                Button(onAction, shape = ControlShape) { Text(action) }
+            }
+        }
     }
 }

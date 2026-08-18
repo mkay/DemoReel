@@ -99,6 +99,8 @@ fun LibraryScreen(
     onOpenFolder: (Folder) -> Unit,
     onBreadcrumb: (Int) -> Unit,
     onCreateFolder: (String) -> Unit,
+    /** Opens the system folder picker — the library is empty until one is granted. */
+    onChooseFolder: () -> Unit,
     onPlay: (Mix) -> Unit,
     onOpen: (Mix) -> Unit,
     onRename: (Uri, String) -> Unit,
@@ -210,7 +212,12 @@ fun LibraryScreen(
         val listing = state.listing
         when {
             state.current == null ->
-                Hint(stringResource(R.string.library_no_folder), Modifier.weight(1f))
+                Hint(
+                    stringResource(R.string.library_no_folder),
+                    Modifier.weight(1f),
+                    action = stringResource(R.string.action_choose_folder),
+                    onAction = onChooseFolder,
+                )
 
             listing?.error != null -> Hint(stringResource(listing.error.message), Modifier.weight(1f))
             listing != null && listing.folders.isEmpty() && listing.mixes.isEmpty() ->

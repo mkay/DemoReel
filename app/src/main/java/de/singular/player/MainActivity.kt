@@ -74,6 +74,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -768,6 +769,7 @@ class MainActivity : AppCompatActivity() {
                                         onOpenFolder = vm::openFolder,
                                         onBreadcrumb = vm::goTo,
                                         onCreateFolder = vm::createFolder,
+                                        onChooseFolder = { folderPicker.launch(null) },
                                         onPlay = { vm.togglePlayback(it) },
                                         onOpen = { enterPlayer(it) },
                                         onRename = vm::renameDocument,
@@ -917,6 +919,11 @@ class MainActivity : AppCompatActivity() {
     ) {
         AlertDialog(
             onDismissRequest = onDismiss,
+            // A tap outside does not put this away. It is the one dialog in the app whose subject
+            // is the app being unusable — there is nothing behind it to tap *at* — so a stray touch
+            // beside it would only leave someone looking at an empty library wondering where the
+            // question went. Back still works, because back is a decision rather than a slip.
+            properties = DialogProperties(dismissOnClickOutside = false),
             title = {
                 Text(
                     stringResource(
