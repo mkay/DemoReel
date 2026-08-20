@@ -16,6 +16,46 @@ Version 3 only, not "or any later version". Every source file carries
 `SPDX-License-Identifier: GPL-3.0-only` saying so.
 
 
+THIRD-PARTY CODE
+
+The MP3 encoder is not ours. LAME 3.100 is vendored unmodified under
+`app/src/main/cpp/lame` and built into `libdemoreel_mp3.so`; it is the only
+third-party code that ships inside the app.
+
+  Copyright (c) 1999-2000 Mark Taylor
+  Copyright (c) 2000-2005 Takehiro Tominaga
+  Copyright (c) 2000-2017 Robert Hegemann
+  Copyright (c) 2000-2005 Gabriel Bouvigne
+  Copyright (c) 2000-2004 Alexander Leidinger
+
+  libmp3lame/gain_analysis.c, the ReplayGain analysis:
+  Copyright (C) 2001 David Robinson and Glen Sawyer, with improvements by
+  Frank Klemm and Marcel Muller
+
+Those are the names the file headers carry, and the headers themselves are the
+attribution that matters: no upstream source file was touched, and none should
+be. Rewriting one of those notices is a licensing problem, not a style choice.
+
+LAME is under the GNU Lesser General Public License — version 2 or later by the
+headers of most of its files, version 2.1 or later for `gain_analysis.c`. This
+app takes it as 2.1. The licence text upstream ships is in
+`app/src/main/cpp/lame/COPYING`; LAME's own statement of its terms is in
+`app/src/main/cpp/lame/LICENSE`.
+
+GPL-3.0-only and the LGPL combine by way of LGPL §3, which permits a copy of
+the library to be placed under the GPL. Nothing about the app's own licence
+changes, and this notice does not pull LAME's files under the GPL: they keep
+their headers and their own terms.
+
+Two obligations follow from bundling it, and both are met rather than promised.
+The use of LAME is said in the app itself, on the About screen under Settings,
+and its source ships in this repository, unmodified — see
+`app/src/main/cpp/lame/README.md` for the exact release, its checksum, and the
+one file (`config.h`) that is ours rather than upstream's.
+
+LAME lives at <https://lame.sourceforge.io/>.
+
+
 ARTWORK
 
 The icon is original artwork, and is licensed separately from the code, under
