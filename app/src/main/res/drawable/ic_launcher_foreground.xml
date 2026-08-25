@@ -7,9 +7,9 @@
 
   The artwork was drawn on its own 1495-unit disc; the group maps that disc onto the adaptive
   icon's central 72 units, so the disc's edge lands exactly on the circle a round mask cuts and the
-  arcs meet it at the proportion they were drawn at. The disc itself is not redrawn here — the
-  gradient behind it is @drawable/ic_launcher_background, full-bleed, so square and squircle masks
-  are filled to their corners too.
+  arcs meet it at the proportion they were drawn at. The disc itself is not redrawn here — it is
+  the gradient circle in @drawable/ic_launcher_background, which also lays the dark tile the disc
+  sits on, so square and squircle masks are filled to their corners too.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

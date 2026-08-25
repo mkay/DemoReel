@@ -2,14 +2,18 @@
   SPDX-License-Identifier: CC-BY-4.0
   Copyright (C) 2026 Kreuder <mk@singular.de>
 
-  The icon's ground: the slate gradient the mark is drawn on, slate-400 into slate-500 along the
-  tile's diagonal. It is a full-bleed rectangle rather than the disc the artwork was drawn as, so
-  that every launcher mask — circle, squircle, rounded square — is filled to its own edge and the
-  gradient the mark sits on is the same one whichever shape the device cuts.
+  The icon's ground: a dark tile with the reel's disc on it, as the mark sits on the page in
+  @drawable/ic_wordmark. The tile is a full-bleed rectangle so that every launcher mask — circle,
+  squircle, rounded square — is filled to its own edge; the gradient is no longer the ground but
+  the disc, slate-400 into slate-500, drawn where the artwork drew it.
 
-  The ramp is pinned to where it ran in the artwork (the disc's inscribed diagonal, mapped onto this
-  canvas), so the mark meets the same colours it was drawn against; the corners outside that run
-  clamp to the end colours.
+  The disc is the circle inscribed in the adaptive icon's central 72 units, which is where
+  @drawable/ic_launcher_foreground maps the mark's own disc — so the arcs still meet the edge at
+  the proportion they were drawn at, and a round mask cuts along the disc's edge rather than
+  through the tile.
+
+  The ramp is pinned to where it ran in the artwork (the disc's inscribed diagonal, mapped onto
+  this canvas), so the mark meets the same colours it was drawn against.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
@@ -18,7 +22,11 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
+    <path
+        android:fillColor="#020618"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <path android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
