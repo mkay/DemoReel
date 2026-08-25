@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import de.singular.player.R
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
@@ -734,6 +735,47 @@ class MixStore(context: Context) {
             Mix(uri, name, size, modified, tags(uri, size, modified))
         }
     }.getOrNull()
+
+    /**
+     * A mix handed over from another app — a share, or an "open with".
+     *
+     * Deliberately not [describe], which asks for `DocumentsContract` columns. Those exist on a
+     * document provider and need not exist anywhere else, and the file arriving here comes from
+     * whatever app sent it: a file manager, a recorder, a messenger, each with its own provider.
+     * `OpenableColumns` is the pair every openable content uri is required to answer, so that is
+     * what this asks for, with the mime type taken from the resolver rather than a column.
+     *
+     * This reaches outside the granted folder, and is the only thing in the app that does. It is
+     * not a wider grant: the sender attaches a read permission to the one uri it handed over, for
+     * as long as this task lives. Nothing is copied, nothing is indexed, and the mix cannot be
+     * favourited or resumed later, because [Favourites] keys are paths under the root and a file
+     * from elsewhere has none.
+     */
+    suspend fun handedOver(uri: Uri): Mix? = withContext(Dispatchers.IO) {
+        val fromFile = uri.scheme == "file"
+        val mime = resolver.getType(uri) ?: ""
+        var name = if (fromFile) uri.lastPathSegment.orEmpty() else ""
+        var size = 0L
+        if (!fromFile) {
+            runCatching {
+                resolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                    null, null, null,
+                )?.use {
+                    if (it.moveToFirst()) {
+                        name = it.getString(0) ?: ""
+                        size = if (it.isNull(1)) 0L else it.getLong(1)
+                    }
+                }
+            }
+        }
+        // A provider that answers nothing still leaves the uri's own tail, which for almost every
+        // sender is the filename — enough to name the mix and to tell the format from.
+        if (name.isEmpty()) name = uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+        if (name.isEmpty() || !isAudio(name, mime)) return@withContext null
+        Mix(uri, name, size, 0L, tags(uri, size, 0L))
+    }
 
     /** What [uri] says about itself, remembered against its size and mtime — see [tagCache]. */
     private fun tags(uri: Uri, size: Long, modified: Long): Tags {

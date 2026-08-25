@@ -114,6 +114,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Receiving a mix from elsewhere — a share, or an "open with". The one thing in the
+                app that reaches outside the granted folder, and it does not widen that grant: the
+                sending app attaches a read permission to the single uri it hands over, for as long
+                as this task lives. Nothing is copied and nothing is indexed.
+
+                Both actions, because senders differ: a file manager sends VIEW, a share sheet SEND.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
         </activity>
     </application>
 

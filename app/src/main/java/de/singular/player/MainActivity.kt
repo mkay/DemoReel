@@ -2,12 +2,12 @@
 
 package de.singular.player
 
-import android.content.Intent
-import android.net.Uri
-import android.os.Bundle
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,6 +65,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -124,11 +125,28 @@ private enum class Screen(@StringRes val title: Int) {
  * that choice hangs off this base class. Nothing else about AppCompat is used — the UI is Compose
  * from [setContent] down, and the XML theme draws nothing.
  */
+/** The audio a share or an "open with" carries, or null if this intent is neither. */
+private fun audioHandedOver(intent: Intent): Uri? = when (intent.action) {
+    Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+    Intent.ACTION_VIEW -> intent.data
+    else -> null
+}
+
 class MainActivity : AppCompatActivity() {
+
+    /**
+     * A file another app handed over, waiting to be picked up by the composition.
+     *
+     * Held as state rather than read straight out of `getIntent()` inside the composable, because
+     * the same intent would be read again on every recomposition and on rotation — and re-opening
+     * a mix the user had since navigated away from is a hard thing to get out of.
+     */
+    private var handedOver by mutableStateOf<Uri?>(null)
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handedOver = audioHandedOver(intent)
         enableEdgeToEdge()
         setContent {
             val view = LocalView.current
@@ -227,10 +245,30 @@ class MainActivity : AppCompatActivity() {
                         ActivityResultContracts.PickVisualMedia.ImageOnly,
                     )
 
+                    // A share or an "open with" arrives outside the navigation entirely, so it is
+                    // taken here and handed to the ViewModel, which resolves the uri and asks for
+                    // the player through showPlayer below.
+                    val incoming = handedOver
+                    LaunchedEffect(incoming) {
+                        if (incoming != null) {
+                            handedOver = null
+                            vm.openHandedOver(incoming)
+                        }
+                    }
+
                     fun enterPlayer(mix: Mix) {
                         playerReturn = screen
                         vm.openMix(mix)
                         screen = Screen.PLAYER
+                    }
+
+                    val showPlayer by vm.showPlayer.collectAsStateWithLifecycle()
+                    LaunchedEffect(showPlayer) {
+                        if (showPlayer) {
+                            playerReturn = Screen.LIBRARY
+                            screen = Screen.PLAYER
+                            vm.playerShown()
+                        }
                     }
 
                     fun enterEditor(mix: Mix) {
@@ -1017,5 +1055,17 @@ class MainActivity : AppCompatActivity() {
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
             ?.takeIf { it.startsWith("audio/") }
             ?: "audio/*"
+    }
+
+    /**
+     * A second file handed over while the app is already open.
+     *
+     * `setIntent` matters: without it `getIntent()` would go on returning the one this task was
+     * started with, and a later rotation would re-open the wrong mix.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        audioHandedOver(intent)?.let { handedOver = it }
     }
 }

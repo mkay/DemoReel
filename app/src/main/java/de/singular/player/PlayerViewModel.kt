@@ -783,6 +783,46 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Whether something has asked for the player screen from outside the navigation — currently
+     * only a file handed over by another app.
+     *
+     * A flag rather than a call, because the Activity owns which screen is showing and the
+     * ViewModel should not: this says a mix is ready to be looked at, and the Activity decides what
+     * that means for the back stack. Cleared by [playerShown] once it has been acted on, so a
+     * rotation does not send the user back to the player they had left.
+     */
+    private val _showPlayer = MutableStateFlow(false)
+    val showPlayer: StateFlow<Boolean> = _showPlayer.asStateFlow()
+
+    fun playerShown() {
+        _showPlayer.value = false
+    }
+
+    /**
+     * Open a mix another app has handed over — a share, or an "open with" — and play it.
+     *
+     * It is opened in the player rather than dropped into the library, because it is not in the
+     * library and cannot be: the library is one granted folder, and this file is somewhere else
+     * entirely. What the app can honestly do with it is play it and show its waveform for as long
+     * as the grant on that one uri lasts.
+     *
+     * A file this device cannot decode says so through the ordinary refusal, since [play] runs the
+     * same check it runs for anything else.
+     */
+    fun openHandedOver(uri: Uri) {
+        viewModelScope.launch {
+            val mix = store.handedOver(uri)
+            if (mix == null) {
+                _message.value = Message.Text(R.string.msg_not_played)
+                return@launch
+            }
+            openMix(mix)
+            _showPlayer.value = true
+            play(mix, 0)
+        }
+    }
+
     /** Leave the player. Playback carries on in the mini player rather than being cut off. */
     fun closeMix() {
         waveformJob?.cancel()
