@@ -20,6 +20,8 @@ import de.singular.player.audio.TagIo
 import de.singular.player.audio.Tags
 import de.singular.player.audio.Waveform
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -187,6 +189,76 @@ class MixStore(context: Context) {
             folders = folders.sortedBy { f -> f.name.lowercase() },
             mixes = mixes.sortedByDescending { m -> m.modifiedAt },
         )
+    }
+
+    /**
+     * Every mix under the root, folders and subfolders alike, for "shuffle everything".
+     *
+     * ## Why this does not simply walk [list]
+     *
+     * [list] reads the tags of every file it returns, through a [Tags.read] that opens the file. For
+     * one folder on screen that is the right trade — the library shows titles and durations. For a
+     * walk of the whole tree it is the wrong one by an order of magnitude: opening several hundred
+     * files to decide what order to play them in, when the only thing needed is a uri.
+     *
+     * So this queries the same columns and builds each [Mix] with empty [Tags]. Nothing is lost:
+     * [Mix.displayTitle] already falls back to the filename, and once a mix is actually playing the
+     * player reads the real metadata off the file itself — which is where the notification's title
+     * and artwork come from.
+     *
+     * ## Breadth-first, and bounded
+     *
+     * Breadth-first so a deep tree cannot recurse the stack away, and bounded on both folders
+     * visited and mixes collected so that a root accidentally pointed at something enormous fails
+     * slowly rather than never. Both limits are far above what this app is for.
+     *
+     * Not cached. This is reached from a play action rather than a browse, where a pause of a second
+     * or two is the ordinary cost of starting something; if the browse tree ever needs the same walk
+     * it will need a cache, and that is the point to add one.
+     */
+    suspend fun allMixes(): List<Mix> = withContext(Dispatchers.IO) {
+        val tree = root ?: return@withContext emptyList()
+        val start = rootFolder() ?: return@withContext emptyList()
+        val found = ArrayList<Mix>()
+        val pending = ArrayDeque<Uri>()
+        pending += start
+        var folders = 0
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+        )
+        while (pending.isNotEmpty() && folders < FOLDER_WALK_LIMIT && found.size < MIX_WALK_LIMIT) {
+            // A walk of a large tree is exactly the kind of thing someone backs out of.
+            currentCoroutineContext().ensureActive()
+            val folder = pending.removeFirst()
+            folders++
+            val children = runCatching {
+                DocumentsContract.buildChildDocumentsUriUsingTree(
+                    tree, DocumentsContract.getDocumentId(folder),
+                )
+            }.getOrNull() ?: continue
+            val cursor = runCatching { resolver.query(children, columns, null, null, null) }
+                .getOrNull() ?: continue
+            cursor.use {
+                while (it.moveToNext()) {
+                    val id = it.getString(0) ?: continue
+                    val name = it.getString(1) ?: continue
+                    val mime = it.getString(2) ?: ""
+                    val size = if (it.isNull(3)) 0L else it.getLong(3)
+                    val modified = if (it.isNull(4)) 0L else it.getLong(4)
+                    val uri = documentUri(tree, id)
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        pending += uri
+                    } else if (isAudio(name, mime)) {
+                        found += Mix(uri, name, size, modified, Tags())
+                    }
+                }
+            }
+        }
+        found
     }
 
     /**
@@ -707,6 +779,10 @@ class MixStore(context: Context) {
         const val MIME_AUDIO = "audio/mpeg"
 
         const val CACHE_LIMIT = 512
+
+        /** Ceilings for [allMixes], so a root pointed somewhere enormous fails rather than hangs. */
+        const val FOLDER_WALK_LIMIT = 2_000
+        const val MIX_WALK_LIMIT = 10_000
 
         /** Read/write block for the whole-file passes a re-tag makes. */
         const val BLOCK = 64 * 1024
