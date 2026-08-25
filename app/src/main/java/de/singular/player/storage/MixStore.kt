@@ -27,8 +27,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStream
 
-/** A sub-folder of the granted root, for organising mixes. */
-data class Folder(val uri: Uri, val name: String)
+/**
+ * A sub-folder of the granted root, for organising mixes.
+ *
+ * [modifiedAt] is the folder's own last-modified time, which on a filesystem-backed provider moves
+ * when a file is added to it or removed from it — so it answers "where did I last put something?".
+ * The library sorts folders by name and ignores it; the car browse tree sorts by it, because a head
+ * unit shows only the first few rows and the useful few are the ones just worked in.
+ *
+ * Zero where the provider does not report one, which sorts such folders last rather than hiding
+ * them.
+ */
+data class Folder(val uri: Uri, val name: String, val modifiedAt: Long = 0)
 
 /**
  * One demo mix on disk, with whatever it says about itself.
@@ -178,7 +188,7 @@ class MixStore(context: Context) {
                 val modified = if (it.isNull(4)) 0L else it.getLong(4)
                 val uri = documentUri(tree, id)
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    folders += Folder(uri, name)
+                    folders += Folder(uri, name, modified)
                 } else if (isAudio(name, mime)) {
                     mixes += Mix(uri, name, size, modified, tags(uri, size, modified))
                 }

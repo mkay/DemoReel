@@ -107,7 +107,14 @@ class Library(context: Context, private val store: MixStore) {
             rows += action(PLAY + id, res.getString(R.string.auto_play_folder))
         }
         if (atRoot) rows += action(SHUFFLE_ALL, res.getString(R.string.auto_shuffle_all))
-        listing.folders.take(LIMIT).forEach { rows += browsable(FOLDER + documentId(it.uri), it.name) }
+        // Most recently touched first, which is the opposite of the library's own name order and
+        // right here for one reason: a head unit shows the first few rows and hides the rest behind
+        // "More". The folders worth putting there are the ones just recorded into, not the ones
+        // whose names happen to start with A.
+        listing.folders
+            .sortedByDescending { it.modifiedAt }
+            .take(LIMIT)
+            .forEach { rows += browsable(FOLDER + documentId(it.uri), it.name) }
         listing.mixes.take(LIMIT).forEach { rows += playableMix(it) }
         return rows
     }
