@@ -228,6 +228,8 @@
     <string name="auto_needs_folder">Choose a folder in Demo Reel first</string>
     <string name="auto_play_folder">Play this folder</string>
     <string name="auto_shuffle_all">Shuffle everything</string>
+    <string name="auto_repeat_on">Repeat this mix</string>
+    <string name="auto_repeat_off">Stop repeating</string>
     <string name="msg_mix_gone">That mix is no longer there.</string>
     <string name="msg_looping">Repeating.</string>
     <string name="msg_loop_off">Repeat off.</string>

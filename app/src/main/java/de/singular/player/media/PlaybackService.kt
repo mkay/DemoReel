@@ -1,6 +1,7 @@
 package de.singular.player.media
 
 import android.content.Intent
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -8,13 +9,17 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
+import de.singular.player.R
 import de.singular.player.storage.MixStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +88,9 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         player = exo
-        session = MediaLibrarySession.Builder(this, exo, Callback()).build()
+        session = MediaLibrarySession.Builder(this, exo, Callback())
+            .setCustomLayout(listOf(repeatButton(exo.repeatMode)))
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
@@ -112,7 +119,78 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
+    /**
+     * The repeat toggle the car draws in its playback view.
+     *
+     * The phone puts repeat on a long press of the transport, which a head unit has no equivalent
+     * of — there is one row of buttons and no gestures. A custom layout button is how a session
+     * asks for one more, and it carries the same lemniscate the player screen uses so the two
+     * surfaces mean the same thing by the same mark.
+     *
+     * Its label says what pressing it will do rather than what is currently true, because that is
+     * the question someone glancing at a car screen is actually asking.
+     */
+    private fun repeatButton(mode: Int): CommandButton {
+        val on = mode == Player.REPEAT_MODE_ONE
+        return CommandButton.Builder(
+            // Media3's own repeat glyphs rather than the player screen's lemniscate. The phone can
+            // afford a mark that means "repeat" in general, because the icon sits on a button whose
+            // label already says what a press does. A car draws the icon and little else, so the
+            // icon has to carry the state — and these two are drawn differently enough, by the head
+            // unit's own hand, to tell on from off at a glance.
+            if (on) CommandButton.ICON_REPEAT_ONE else CommandButton.ICON_REPEAT_OFF,
+        )
+            .setSessionCommand(SessionCommand(REPEAT, Bundle.EMPTY))
+            .setDisplayName(getString(if (on) R.string.auto_repeat_off else R.string.auto_repeat_on))
+            .build()
+    }
+
+    private fun toggleRepeat() {
+        val exo = player ?: return
+        // REPEAT_MODE_ONE repeats until it is turned off, which is what repeating a mix means here:
+        // you put a take on to sit with it, not to hear it exactly twice.
+        exo.repeatMode =
+            if (exo.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF
+            else Player.REPEAT_MODE_ONE
+        session?.setCustomLayout(listOf(repeatButton(exo.repeatMode)))
+    }
+
     private inner class Callback : MediaLibrarySession.Callback {
+
+        /**
+         * Grant the repeat command, on top of everything a controller gets by default.
+         *
+         * Without this the button is drawn and does nothing: a custom command has to be in the
+         * controller's available set before the session will accept it.
+         */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val default = MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(
+                    default.availableSessionCommands.buildUpon()
+                        .add(SessionCommand(REPEAT, Bundle.EMPTY))
+                        .build(),
+                )
+                .setCustomLayout(listOf(repeatButton(player?.repeatMode ?: Player.REPEAT_MODE_OFF)))
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != REPEAT) {
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+            toggleRepeat()
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
@@ -171,6 +249,11 @@ class PlaybackService : MediaLibraryService() {
                 // Inheriting it here would strand a run on its first mix, which from the driver's
                 // seat is indistinguishable from a shuffle that does not work.
                 player?.repeatMode = Player.REPEAT_MODE_OFF
+                // The button's label says what a press will do, so it has to follow the mode it
+                // was just silently taken out of.
+                this@PlaybackService.session?.setCustomLayout(
+                    listOf(repeatButton(Player.REPEAT_MODE_OFF)),
+                )
                 MediaSession.MediaItemsWithStartPosition(
                     run.map { MediaItem.fromUri(it.uri) },
                     0,
@@ -201,6 +284,11 @@ class PlaybackService : MediaLibraryService() {
      * happen on the main thread — and the car is waiting, so it must not take long either. See the
      * limits in [Library].
      */
+    private companion object {
+        /** The custom action id for the repeat toggle. */
+        const val REPEAT = "de.singular.player.REPEAT"
+    }
+
     private fun <T> future(block: suspend () -> T): ListenableFuture<T> {
         val settable = SettableFuture.create<T>()
         scope.launch {
