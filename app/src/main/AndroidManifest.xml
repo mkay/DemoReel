@@ -83,6 +83,14 @@
         </provider>
 
         <!--
+            Tells Android Auto this app projects a media library. Without it the service is
+            reachable but the app never appears in the car at all.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <!--
             Exported, which sounds worse than it is: a media session has to be reachable by the
             system's own media controls, by a Bluetooth headset, and later by a car head unit, and
             that is all this exposes. It serves a session, not the folder behind it.

@@ -223,6 +223,11 @@
     <string name="msg_choose_folder_first">Choose a folder first.</string>
     <string name="msg_not_played">That file could not be played.</string>
     <string name="msg_nothing_to_play">Nothing to play there.</string>
+
+    <!-- Rows a car head unit draws when browsing the library. Short: they are read at a glance. -->
+    <string name="auto_needs_folder">Choose a folder in Demo Reel first</string>
+    <string name="auto_play_folder">Play this folder</string>
+    <string name="auto_shuffle_all">Shuffle everything</string>
     <string name="msg_mix_gone">That mix is no longer there.</string>
     <string name="msg_looping">Repeating.</string>
     <string name="msg_loop_off">Repeat off.</string>

@@ -17,7 +17,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import de.singular.player.media.PlaybackService
-import de.singular.player.media.Queue
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
 import de.singular.player.audio.AudioTarget
@@ -357,15 +356,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      */
     private var loadedMix: Mix? = null
 
-    /**
-     * The run of mixes the transport is working through, empty when a single mix is loaded.
-     *
-     * Only ever filled from the car — see [Queue] for why the phone has no queue. Kept here for the
-     * same reason [loadedMix] is: the session speaks in uris, and this is what turns the item that
-     * just came up into the [Mix] the rest of the app understands.
-     */
-    private var queued: List<Mix> = emptyList()
-
     private var progressJob: Job? = null
 
     /** Opening a mix for playback — the decode check and the prepare. See [play]. */
@@ -413,20 +403,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         /**
-         * The player moved to another item in a queue — tell the rest of the app which mix that is.
+         * The player moved on to another mix — tell the rest of the app which one.
          *
-         * Never fires for single-mix playback, which is the only kind the phone can start.
+         * Only a run started in the car can transition, and the run was built in the service, so
+         * this side has no list to look the uri up in. It asks storage, exactly as adopting a
+         * session does: whoever started the playback, the phone follows along.
          */
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
             val uri = item?.localConfiguration?.uri ?: return
-            val mix = queued.firstOrNull { it.uri == uri } ?: return
-            loadedMix = mix
-            _playback.value = PlaybackState(
-                mix = mix,
-                positionMs = 0,
-                durationMs = mix.durationMs,
-                playing = controller?.isPlaying == true,
-            )
+            if (loadedMix?.uri == uri) return
+            viewModelScope.launch {
+                val mix = store.mix(uri) ?: return@launch
+                loadedMix = mix
+                _playback.value = PlaybackState(
+                    mix = mix,
+                    positionMs = 0,
+                    durationMs = controller?.duration?.coerceAtLeast(0) ?: 0,
+                    playing = controller?.isPlaying == true,
+                )
+            }
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -929,8 +924,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // A second press while the first was still opening: that press owns the transport now.
             if (!isActive) return@launch
             val player = controller ?: return@launch
-            // A single mix ends whatever run was going: the phone plays one thing at a time.
-            queued = emptyList()
             loadedMix = mix
             // Seek as the item is set, so a mix opened at a mark does not blurt out its first
             // half-second before jumping.
@@ -946,62 +939,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 playing = true,
             )
         }
-    }
-
-    // ---- runs of mixes, for the car ---------------------------------------------------------
-
-    /**
-     * Play [mixes] in the order given, starting at the first.
-     *
-     * The three entry points below are the only things that build a queue, and none of them is
-     * reachable from the phone: driving is the one case where picking each next mix by hand is both
-     * impractical and unsafe. See [Queue].
-     *
-     * Repeat is turned off as a run starts. Repeat-one is a phone gesture — hold the transport to
-     * sit with a take — and inheriting it here would strand a shuffle on whichever mix came up
-     * first, which looks exactly like a broken shuffle from the driver's seat.
-     */
-    private fun playRun(mixes: List<Mix>) {
-        if (mixes.isEmpty()) {
-            _message.value = Message.Text(R.string.msg_nothing_to_play)
-            return
-        }
-        val player = controller ?: return
-        playJob?.cancel()
-        stopTicking()
-        queued = mixes
-        loadedMix = mixes.first()
-        _looping.value = false
-        player.repeatMode = Player.REPEAT_MODE_OFF
-        player.setMediaItems(mixes.map { MediaItem.fromUri(it.uri) })
-        player.prepare()
-        player.play()
-        _playback.value = PlaybackState(
-            mix = mixes.first(),
-            positionMs = 0,
-            durationMs = 0,
-            playing = true,
-        )
-    }
-
-    /** Play a folder through, as it is listed. */
-    fun playFolder(folder: Uri) {
-        viewModelScope.launch { playRun(Queue.inOrder(store.list(folder).mixes)) }
-    }
-
-    /** Play a folder through in a random order. */
-    fun shuffleFolder(folder: Uri) {
-        viewModelScope.launch { playRun(Queue.shuffled(store.list(folder).mixes)) }
-    }
-
-    /**
-     * Play everything under the root in a random order.
-     *
-     * The walk is the slow part and is done off the main thread by [MixStore.allMixes]; a big tree
-     * takes a moment before the first mix sounds.
-     */
-    fun shuffleEverything() {
-        viewModelScope.launch { playRun(Queue.shuffled(store.allMixes())) }
     }
 
     /**
@@ -1042,7 +979,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         pausePlayback()
         controller?.clearMediaItems()
         loadedMix = null
-        queued = emptyList()
         lastPlayedStore.clear()
         _playback.value = PlaybackState()
     }

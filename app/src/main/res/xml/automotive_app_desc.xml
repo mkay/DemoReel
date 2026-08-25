@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What Android Auto reads to decide this app is worth showing in a car.
+
+  "media" and nothing else: Demo Reel projects a library to browse and a transport to press, and
+  has no business drawing its own screens at the wheel. The tag editor, the waveform and the
+  converter stay on the phone, where someone can look at them.
+-->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>
