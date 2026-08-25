@@ -3,13 +3,20 @@
 package de.singular.player
 
 import android.app.Application
+import android.content.ComponentName
 import android.content.Context
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
+import de.singular.player.media.PlaybackService
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
 import de.singular.player.audio.AudioTarget
@@ -328,7 +335,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _message = MutableStateFlow<Message?>(null)
     val message: StateFlow<Message?> = _message.asStateFlow()
 
-    private var player: MediaPlayer? = null
+    /**
+     * The handle on [PlaybackService]'s session, or null until it connects.
+     *
+     * Null is an ordinary state, not an error: connecting is asynchronous, and a press that lands
+     * first is simply dropped. The alternative — queueing it — would mean a mix starting after the
+     * user had moved on, which is worse than nothing happening.
+     */
+    private var controller: MediaController? = null
+
+    /**
+     * The mix the transport is loaded with.
+     *
+     * The session speaks in [MediaItem]s and knows only a uri; the rest of the app speaks in
+     * [Mix]es, which carry the tags and the name the UI shows. Rather than pack all of that into
+     * session metadata and read it back out, the one mix that was handed to the player is kept here
+     * and matched by uri.
+     */
+    private var loadedMix: Mix? = null
+
     private var progressJob: Job? = null
 
     /** Opening a mix for playback — the decode check and the prepare. See [play]. */
@@ -338,6 +363,86 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     // with the defaults, and the launch crash that put it there.
     init {
         openRoot()
+        connectToSession()
+    }
+
+    /**
+     * Bind to [PlaybackService], and adopt whatever it is already doing.
+     *
+     * The service may well be playing before this runs — that is the entire point of it outliving
+     * the UI — so connecting is not "start from nothing" but "find out what is going on and show
+     * it". A mix started from the lock screen and then opened in the app has to land in the mini
+     * player with its playhead where the session left it.
+     */
+    private fun connectToSession() {
+        val app = getApplication<Application>()
+        val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
+        val future = MediaController.Builder(app, token).buildAsync()
+        future.addListener({
+            val connected = runCatching { future.get() }.getOrNull() ?: return@addListener
+            controller = connected
+            connected.addListener(playerListener)
+            connected.repeatMode =
+                if (_looping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            adoptSessionState()
+        }, MoreExecutors.directExecutor())
+    }
+
+    /**
+     * Mirror the session's transport into [playback].
+     *
+     * Everything the UI reads about playback comes through here, so there is one path from the
+     * session's truth to the screen rather than a copy kept in step by hand.
+     */
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            _playback.update { it.copy(playing = isPlaying) }
+            if (isPlaying) startTicking() else stopTicking()
+        }
+
+        override fun onPlaybackStateChanged(state: Int) {
+            val player = controller ?: return
+            when (state) {
+                Player.STATE_READY -> _playback.update {
+                    it.copy(durationMs = player.duration.coerceAtLeast(0))
+                }
+                // Reaching the end leaves the mix loaded at its start, ready to go again — but
+                // marked as done with, so nothing has to keep reporting on it. Playing it again
+                // clears the mark, since [play] builds the state fresh.
+                Player.STATE_ENDED -> {
+                    player.pause()
+                    player.seekTo(0)
+                    _playback.update { it.copy(positionMs = 0, playing = false, finished = true) }
+                }
+                else -> Unit
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            _message.value = Message.Text(R.string.msg_not_played)
+            _playback.update { it.copy(playing = false) }
+        }
+    }
+
+    /** Take on what the session is already playing, at connect time. */
+    private fun adoptSessionState() {
+        val player = controller ?: return
+        val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
+        // The service knows the uri; only this side knows which mix that is. If the mix is not the
+        // one this process last handed over — a fresh process adopting a session that outlived it —
+        // the library listing is the place to find it, and until then the uri is enough to show a
+        // playhead.
+        val mix = loadedMix?.takeIf { it.uri == uri }
+            ?: _library.value.listing?.mixes?.firstOrNull { it.uri == uri }
+            ?: return
+        loadedMix = mix
+        _playback.value = PlaybackState(
+            mix = mix,
+            positionMs = player.currentPosition.coerceAtLeast(0),
+            durationMs = player.duration.coerceAtLeast(0),
+            playing = player.isPlaying,
+        )
+        if (player.isPlaying) startTicking()
     }
 
     // ---- storage ----------------------------------------------------------------------------
@@ -668,36 +773,60 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         play(mix, resume)
     }
 
-    /** Give up the audio device but keep the mix and where we were in it. */
+    /**
+     * Give up the audio device but keep the mix and where we were in it.
+     *
+     * This used to release the player outright, because a released [android.media.MediaPlayer] was
+     * the only way to be sure the file handle was let go. The session pauses properly instead — the
+     * mix stays loaded, resuming is instant, and the places that genuinely need the file released
+     * call [stopPlayback], which clears the transport.
+     */
     private fun pausePlayback() {
         // A mix that is still opening counts as playing to the user, so stop has to reach it too.
         playJob?.cancel()
         playJob = null
+        stopTicking()
+        controller?.pause()
+        _playback.update { it.copy(playing = false) }
+    }
+
+    /** Read the playhead back off the session while it is moving, and not while it is not. */
+    private fun startTicking() {
+        if (progressJob?.isActive == true) return
+        progressJob = viewModelScope.launch {
+            while (true) {
+                delay(PROGRESS_TICK_MS)
+                val at = controller?.currentPosition ?: break
+                _playback.update { it.copy(positionMs = at.coerceAtLeast(0)) }
+            }
+        }
+    }
+
+    private fun stopTicking() {
         progressJob?.cancel()
         progressJob = null
-        player?.let {
-            runCatching { it.stop() }
-            runCatching { it.release() }
-        }
-        player = null
-        _playback.value = _playback.value.copy(playing = false)
     }
 
     /**
      * Start [mix] at [fromMs] — or say plainly that it cannot be played.
      *
-     * **Why a decode comes first.** [MediaPlayer] is willing to prepare and start a file whose audio
-     * never reaches the speaker: an ALAC file does exactly that on some devices, because the system
-     * hands the compressed stream to a DSP offload path that fails on every write while the
-     * transport reports itself playing and the position runs past the file's own duration. Silence
-     * that looks like playback is the worst answer available, so a buffer is decoded first and the
-     * press is refused if that fails. See [AudioDecoder.canDecode] for why the codec list is no
-     * substitute.
+     * **Why a decode comes first.** A player is willing to prepare and start a file whose audio
+     * never reaches the speaker: an ALAC file did exactly that on some devices under
+     * [android.media.MediaPlayer], because the system handed the compressed stream to a DSP offload
+     * path that failed on every write while the transport reported itself playing and the position
+     * ran past the file's own duration. Silence that looks like playback is the worst answer
+     * available, so a buffer is decoded first and the press is refused if that fails. See
+     * [AudioDecoder.canDecode] for why the codec list is no substitute.
+     *
+     * The check is kept now that playback goes through ExoPlayer, whose renderers decode with the
+     * same [android.media.MediaCodec] this check uses — which makes the two agree rather than, as
+     * before, guess about each other. Whether that closes the ALAC case specifically is untested.
      *
      * The check goes here rather than only on the player screen because a mix is started from the
      * library list and the mini player too, neither of which has read a waveform.
      *
-     * All of it off the main thread, which is where [MediaPlayer.prepare] belonged anyway.
+     * The decode still runs off the main thread; handing the uri to the session is cheap, and the
+     * preparing and the sounding happen in the service.
      */
     private fun play(mix: Mix, fromMs: Long) {
         pausePlayback()
@@ -709,57 +838,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 _message.value = Message.of(StorageFailure.NO_DECODER)
                 return@launch
             }
-            val mp = MediaPlayer()
-            mp.isLooping = _looping.value
-            val started = withContext(Dispatchers.IO) {
-                runCatching {
-                    mp.setDataSource(app, mix.uri)
-                    mp.prepare()
-                    // Seek before starting, so a mix opened at a mark does not blurt out its first
-                    // half-second before jumping.
-                    if (fromMs > 0) mp.seekTo(fromMs.toInt())
-                    mp.start()
-                }.isSuccess
-            }
-            if (!started) {
-                runCatching { mp.release() }
-                _message.value = Message.Text(R.string.msg_not_played)
-                return@launch
-            }
-            // A second press while the first was still opening: that press owns the transport now,
-            // and this one has a started player to put down.
-            if (!isActive) {
-                runCatching { mp.stop() }
-                runCatching { mp.release() }
-                return@launch
-            }
-            start(mix, mp, fromMs)
-        }
-    }
-
-    /** The bookkeeping around a [MediaPlayer] that is already playing — see [play]. */
-    private fun start(mix: Mix, mp: MediaPlayer, fromMs: Long) {
-        // Reaching the end leaves the mix loaded at its start, ready to go again — but marked as
-        // done with, so nothing has to keep reporting on it. Playing it again clears the mark, since
-        // [play] builds the state fresh.
-        mp.setOnCompletionListener {
-            pausePlayback()
-            _playback.value = _playback.value.copy(positionMs = 0, finished = true)
-        }
-        player = mp
-        _playback.value = PlaybackState(
-            mix = mix,
-            positionMs = fromMs.coerceAtLeast(0),
-            durationMs = mp.duration.toLong().coerceAtLeast(0),
-            playing = true,
-        )
-        progressJob = viewModelScope.launch {
-            while (true) {
-                delay(PROGRESS_TICK_MS)
-                val current = player ?: break
-                val at = runCatching { current.currentPosition.toLong() }.getOrNull() ?: break
-                _playback.value = _playback.value.copy(positionMs = at)
-            }
+            // A second press while the first was still opening: that press owns the transport now.
+            if (!isActive) return@launch
+            val player = controller ?: return@launch
+            loadedMix = mix
+            // Seek as the item is set, so a mix opened at a mark does not blurt out its first
+            // half-second before jumping.
+            player.setMediaItem(MediaItem.fromUri(mix.uri), fromMs.coerceAtLeast(0))
+            player.prepare()
+            player.play()
+            // Duration is not known until the player is ready; the listener fills it in. Everything
+            // else can be shown now, so the mini player appears on the press rather than after it.
+            _playback.value = PlaybackState(
+                mix = mix,
+                positionMs = fromMs.coerceAtLeast(0),
+                durationMs = 0,
+                playing = true,
+            )
         }
     }
 
@@ -774,7 +869,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val on = !_looping.value
         _looping.value = on
         // Takes effect on what is already playing, not only on the next press.
-        player?.let { runCatching { it.isLooping = on } }
+        controller?.repeatMode = if (on) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         _message.value = Message.Text(if (on) R.string.msg_looping else R.string.msg_loop_off)
     }
 
@@ -787,13 +882,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekTo(ms: Long) {
-        player?.let { runCatching { it.seekTo(ms.toInt()) } }
-        _playback.value = _playback.value.copy(positionMs = ms)
+        controller?.seekTo(ms)
+        _playback.update { it.copy(positionMs = ms) }
     }
 
-    /** Unload the mix entirely — for when it is going away, not merely pausing. */
+    /**
+     * Unload the mix entirely — for when it is going away, not merely pausing.
+     *
+     * Clearing the transport is what releases the file, which is why the tag editor and the
+     * normalise path call this before rewriting bytes underneath a mix that is open.
+     */
     fun stopPlayback() {
         pausePlayback()
+        controller?.clearMediaItems()
+        loadedMix = null
         _playback.value = PlaybackState()
     }
 
@@ -952,8 +1054,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (_busy.value || !edit.supported) return
         viewModelScope.launch {
             _busy.value = true
-            // The file is about to be rebuilt under the system player; let go of it first rather
-            // than leave MediaPlayer reading a document whose bytes are being replaced.
+            // The file is about to be rebuilt under the player; let go of it first rather than
+            // leave the session reading a document whose bytes are being replaced.
             if (_playback.value.uri == edit.mix.uri) stopPlayback()
             store.writeTags(edit.mix, edit.tags, edit.cover)
                 .onSuccess { written ->
@@ -1263,8 +1365,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _message.value = null
     }
 
+    /**
+     * The UI is going away; playback is not.
+     *
+     * Deliberately no longer [stopPlayback] — that line was the reason dismissing the app from
+     * recents cut off a mix mid-play. Only this side's handle on the session is dropped. What
+     * happens to the playback itself is [PlaybackService]'s call, and it keeps a playing mix alive.
+     */
     override fun onCleared() {
-        stopPlayback()
+        stopTicking()
+        controller?.removeListener(playerListener)
+        controller?.release()
+        controller = null
         super.onCleared()
     }
 

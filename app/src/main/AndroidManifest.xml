@@ -14,6 +14,17 @@
       reach further is not. Playing in the background needs the first kind and none of the second.
     -->
 
+    <!--
+      Background playback, and nothing beyond it. The service is what keeps a mix alive once the UI
+      is gone, the notification is how it is controlled from outside the app, and the wake lock is
+      what stops the CPU sleeping under a mix played with the screen off. Not one of them reads a
+      byte the folder grant did not already reach.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -60,6 +71,21 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!--
+            Exported, which sounds worse than it is: a media session has to be reachable by the
+            system's own media controls, by a Bluetooth headset, and later by a car head unit, and
+            that is all this exposes. It serves a session, not the folder behind it.
+        -->
+        <service
+            android:name=".media.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".MainActivity"

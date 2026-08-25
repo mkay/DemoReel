@@ -130,6 +130,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
 
+    // Playback lives in a service behind a MediaSession, so it outlives the UI and takes part in
+    // the platform's audio conventions — focus, media buttons, the noisy broadcast. ExoPlayer
+    // replaces MediaPlayer for playback only; the decode, waveform and conversion paths keep using
+    // MediaCodec directly, and the tag parsers are untouched.
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-session:1.11.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
