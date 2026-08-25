@@ -5,6 +5,9 @@ package de.singular.player
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,6 +64,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -180,6 +184,32 @@ class MainActivity : AppCompatActivity() {
                     val folderPicker = rememberLauncherForActivityResult(
                         ActivityResultContracts.OpenDocumentTree(),
                     ) { uri -> uri?.let(vm::onFolderPicked) }
+
+                    // Asking to post notifications, which is what a media notification needs on 13+.
+                    //
+                    // Asked on the first mix played rather than at launch: cold, before anything has
+                    // been listened to, the prompt has nothing to point at and the honest answer is
+                    // no. Once a mix is playing, the thing being asked for is the lock-screen
+                    // controls for the mix that is playing, which is a question worth answering.
+                    //
+                    // Refusing it costs the notification and nothing else — playback and the service
+                    // are unaffected, so the prompt is asked once and never pressed again.
+                    val appContext = LocalContext.current.applicationContext
+                    val notificationPermission = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission(),
+                    ) { }
+                    var notificationsAsked by rememberSaveable { mutableStateOf(false) }
+                    val hasPlayed = playback.mix != null
+                    LaunchedEffect(hasPlayed, notificationsAsked) {
+                        if (!hasPlayed || notificationsAsked) return@LaunchedEffect
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
+                        val granted = ContextCompat.checkSelfPermission(
+                            appContext,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        notificationsAsked = true
+                        if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
 
                     // The photo picker, which grants a read on the one image chosen and needs no
                     // permission at all — the app never sees the gallery, only the picked file, and
