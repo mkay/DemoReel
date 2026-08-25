@@ -28,6 +28,7 @@ import de.singular.player.storage.Defaults
 import de.singular.player.storage.Favourites
 import de.singular.player.storage.Folder
 import de.singular.player.storage.ImageClipboard
+import de.singular.player.storage.LastPlayed
 import de.singular.player.storage.Listing
 import de.singular.player.storage.Mix
 import de.singular.player.storage.MixStore
@@ -180,6 +181,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val prefs = application.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private val favouriteStore = Favourites(application)
     private val recentStore = Recents(application)
+    private val lastPlayedStore = LastPlayed(application)
     private val defaultsStore = Defaults(application)
 
     /** The store, for whatever else needs to read files — the cover loader, chiefly. */
@@ -427,7 +429,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Take on what the session is already playing, at connect time. */
     private fun adoptSessionState() {
         val player = controller ?: return
-        val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
+        val uri = player.currentMediaItem?.localConfiguration?.uri ?: run {
+            // Nothing loaded: either a first run, or the process was killed and the service went
+            // with it. The latter is the common one, and it is what [LastPlayed] is for.
+            restoreLastPlayed()
+            return
+        }
         // The service knows the uri; only this side knows which mix that is. If the mix is not the
         // one this process last handed over — a fresh process adopting a session that outlived it —
         // the library listing is the place to find it, and until then the uri is enough to show a
@@ -774,6 +781,45 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * Put the loaded mix and its playhead somewhere a killed process can find them again.
+     *
+     * Written rather than remembered, because there is no callback for being killed.
+     */
+    private fun rememberWhereWeAre() {
+        val state = _playback.value
+        val uri = state.uri ?: return
+        val key = favouriteKey(uri) ?: return
+        lastPlayedStore.write(key, state.positionMs)
+    }
+
+    /**
+     * Load — but do not play — whatever was going when the process died.
+     *
+     * Resolving the key touches storage, so it is done off the main thread; a mix that no longer
+     * resolves is simply forgotten, since a stale mini player pointing at a deleted file is worse
+     * than an empty one.
+     */
+    private fun restoreLastPlayed() {
+        val (key, positionMs) = lastPlayedStore.read() ?: return
+        viewModelScope.launch {
+            val mix = store.mixAt(key)
+            if (mix == null) {
+                lastPlayedStore.clear()
+                return@launch
+            }
+            // A press in the meantime wins: it has already loaded something the user asked for.
+            if (_playback.value.mix != null) return@launch
+            loadedMix = mix
+            _playback.value = PlaybackState(
+                mix = mix,
+                positionMs = positionMs,
+                durationMs = mix.durationMs,
+                playing = false,
+            )
+        }
+    }
+
+    /**
      * Give up the audio device but keep the mix and where we were in it.
      *
      * This used to release the player outright, because a released [android.media.MediaPlayer] was
@@ -788,6 +834,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         stopTicking()
         controller?.pause()
         _playback.update { it.copy(playing = false) }
+        rememberWhereWeAre()
     }
 
     /** Read the playhead back off the session while it is moving, and not while it is not. */
@@ -798,6 +845,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 delay(PROGRESS_TICK_MS)
                 val at = controller?.currentPosition ?: break
                 _playback.update { it.copy(positionMs = at.coerceAtLeast(0)) }
+                // Cheap enough to write on the tick: a process kill gives no warning, so the only
+                // position worth having is the one already on disk.
+                rememberWhereWeAre()
             }
         }
     }
@@ -896,6 +946,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         pausePlayback()
         controller?.clearMediaItems()
         loadedMix = null
+        lastPlayedStore.clear()
         _playback.value = PlaybackState()
     }
 
