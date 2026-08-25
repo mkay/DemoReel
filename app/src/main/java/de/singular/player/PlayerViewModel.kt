@@ -462,21 +462,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             restoreLastPlayed()
             return
         }
-        // The service knows the uri; only this side knows which mix that is. If the mix is not the
-        // one this process last handed over — a fresh process adopting a session that outlived it —
-        // the library listing is the place to find it, and until then the uri is enough to show a
-        // playhead.
-        val mix = loadedMix?.takeIf { it.uri == uri }
+        // The service knows the uri; only this side knows which mix that is. Cheapest first: what
+        // this process handed over, then the folder on screen. Neither will do for a run started in
+        // the car, which can be anywhere in the tree and outlives the process that began it — so
+        // the last resort asks storage directly.
+        val known = loadedMix?.takeIf { it.uri == uri }
             ?: _library.value.listing?.mixes?.firstOrNull { it.uri == uri }
-            ?: return
-        loadedMix = mix
-        _playback.value = PlaybackState(
-            mix = mix,
-            positionMs = player.currentPosition.coerceAtLeast(0),
-            durationMs = player.duration.coerceAtLeast(0),
-            playing = player.isPlaying,
-        )
-        if (player.isPlaying) startTicking()
+        val position = player.currentPosition.coerceAtLeast(0)
+        val duration = player.duration.coerceAtLeast(0)
+        val playing = player.isPlaying
+        if (known != null) {
+            loadedMix = known
+            _playback.value = PlaybackState(known, position, duration, playing)
+            if (playing) startTicking()
+            return
+        }
+        viewModelScope.launch {
+            val found = store.mix(uri) ?: return@launch
+            loadedMix = found
+            _playback.value = PlaybackState(
+                mix = found,
+                positionMs = controller?.currentPosition?.coerceAtLeast(0) ?: position,
+                durationMs = controller?.duration?.coerceAtLeast(0) ?: duration,
+                playing = controller?.isPlaying == true,
+            )
+            if (controller?.isPlaying == true) startTicking()
+        }
     }
 
     // ---- storage ----------------------------------------------------------------------------
