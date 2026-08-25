@@ -25,6 +25,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+      ExoPlayer's own manifest asks for ACCESS_NETWORK_STATE, for adapting a stream's bitrate to the
+      connection. This app has no streams and no network: every mix is a local document under the
+      folder grant. Taken back out, because a permission arriving as a transitive gift is still a
+      permission on the install screen, and this one reaches somewhere the app has no business.
+    -->
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
+
     <application
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
