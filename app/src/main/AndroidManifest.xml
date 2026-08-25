@@ -3,10 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      No permissions at all, and that is the app's whole premise. Demo Reel reads one folder the
-      user hands it through the Storage Access Framework and nothing else — no READ_MEDIA_AUDIO, so
-      the ringtones, the podcasts and the rest of the device's music cannot leak into the library
-      even by accident. The grant is the boundary; there is no wider one to fall back on.
+      No permission that widens what the app can reach, and that is its whole premise. Demo Reel
+      reads one folder the user hands it through the Storage Access Framework and nothing else — no
+      READ_MEDIA_AUDIO, so the ringtones, the podcasts and the rest of the device's music cannot
+      leak into the library even by accident. The grant is the boundary; there is no wider one to
+      fall back on.
+
+      That is the test anything declared here has to pass, and it is narrower than "as few as
+      possible": a permission to act on what the grant already reaches is fair, a permission to
+      reach further is not. Playing in the background needs the first kind and none of the second.
     -->
 
     <application
