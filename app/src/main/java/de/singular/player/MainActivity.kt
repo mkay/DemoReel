@@ -177,6 +177,9 @@ class MainActivity : AppCompatActivity() {
                     val favourites by vm.favourites.collectAsStateWithLifecycle()
                     val favouriteMixes by vm.favouriteMixes.collectAsStateWithLifecycle()
                     val movePicker by vm.movePicker.collectAsStateWithLifecycle()
+                    // The uri of the open mix when it came from another app — what turns on
+                    // the offer to keep it. See [PlayerViewModel.handedOver].
+                    val handedOverMix by vm.handedOver.collectAsStateWithLifecycle()
                     val recents by vm.recents.collectAsStateWithLifecycle()
                     val editing by vm.editing.collectAsStateWithLifecycle()
                     val defaults by vm.defaults.collectAsStateWithLifecycle()
@@ -489,7 +492,7 @@ class MainActivity : AppCompatActivity() {
                             onOpenFolder = vm::openMoveFolder,
                             onUp = vm::moveGoUp,
                             onConfirm = {
-                                vm.confirmMove()
+                                vm.confirmPick()
                                 // The rows are on their way out of this folder; the batch is over.
                                 selection = emptySet()
                             },
@@ -673,14 +676,29 @@ class MainActivity : AppCompatActivity() {
                                         // editor is the exception: it has no title of its own on
                                         // screen (the title is a *field* there, and may be empty),
                                         // so the bar has to say what this screen is.
+                                        //
+                                        // A handed-over mix breaks that rule because the rule's
+                                        // premise is gone: the file sits in no folder of ours, and
+                                        // the bar would otherwise say "Library" of a file that is
+                                        // nowhere near it. It says what the file *is* instead —
+                                        // the name is already below in full size, and printing it
+                                        // twice a finger's width apart says nothing the second
+                                        // time, while the state is the thing not said anywhere
+                                        // else in the chrome.
+                                        val onLoan = openMix?.mix?.uri == handedOverMix &&
+                                            handedOverMix != null
                                         Text(
-                                            if (screen == Screen.PLAYER) {
-                                                library.current
+                                            when {
+                                                screen != Screen.PLAYER ->
+                                                    stringResource(screen.title)
+
+                                                onLoan ->
+                                                    stringResource(R.string.player_title_unsaved)
+
+                                                else -> library.current
                                                     ?.takeIf { library.canGoUp }
                                                     ?.name
                                                     ?: stringResource(Screen.LIBRARY.title)
-                                            } else {
-                                                stringResource(screen.title)
                                             },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -766,7 +784,14 @@ class MainActivity : AppCompatActivity() {
                                         // it plays rather than after. As an icon it says whether the
                                         // mix is marked just by being on screen, which is what a
                                         // menu item cannot do without being opened.
-                                        openMix?.takeIf { screen == Screen.PLAYER }?.let { open ->
+                                        // Not for a mix on loan from another app: a mark is a path
+                                        // under the granted folder, which such a file has none of,
+                                        // so the star would be a control that does nothing —
+                                        // [PlayerViewModel.toggleFavourite] drops it on the floor.
+                                        val starrable = openMix?.takeIf {
+                                            screen == Screen.PLAYER && it.mix.uri != handedOverMix
+                                        }
+                                        starrable?.let { open ->
                                             val marked =
                                                 vm.favouriteKey(open.mix.uri) in favourites
                                             IconButton(
@@ -802,6 +827,12 @@ class MainActivity : AppCompatActivity() {
                                                 onShare = { share(open.mix) },
                                                 onMove = { vm.startMove(listOf(open.mix.uri)) },
                                                 onDelete = { deletingOpenMix = true },
+                                                // Offered only while the player is on a file
+                                                // another app handed in, which is the only mix
+                                                // that is not in the library already.
+                                                onAddToLibrary = open.mix.uri
+                                                    .takeIf { it == handedOverMix }
+                                                    ?.let { uri -> { vm.startImport(uri) } },
                                             )
                                         }
                                     },
@@ -821,6 +852,8 @@ class MainActivity : AppCompatActivity() {
                                         onSeek = vm::seekTo,
                                         onOpen = { playback.mix?.let { enterPlayer(it) } },
                                         onDismiss = vm::stopPlayback,
+                                        unsaved = playback.uri != null &&
+                                            playback.uri == handedOverMix,
                                     )
                                 }
                             },
@@ -918,6 +951,11 @@ class MainActivity : AppCompatActivity() {
                                             onNormalize = vm::normalizeOpenMix,
                                             onConvert = vm::convertOpenMix,
                                             onSaveNote = vm::saveNote,
+                                            // Non-null only for a handed-over file, which is what
+                                            // dims the edits and puts the notice above them.
+                                            onAddToLibrary = open.mix.uri
+                                                .takeIf { it == handedOverMix }
+                                                ?.let { uri -> { vm.startImport(uri) } },
                                             modifier = content,
                                         )
                                     } ?: LaunchedEffect(Unit) { screen = Screen.LIBRARY }

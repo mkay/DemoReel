@@ -93,10 +93,21 @@ data class MovePicker(
     val path: List<Folder>,
     val folders: List<Folder> = emptyList(),
     val loading: Boolean = true,
+    val mode: PickerMode = PickerMode.MOVE,
 ) {
     val destination: Folder get() = path.last()
     val canGoUp: Boolean get() = path.size > 1
 }
+
+/**
+ * What the folder picker is aiming.
+ *
+ * The same tree walked for the same question — which folder? — so it is one dialog rather than two
+ * that would drift apart. Only the words on it and what happens on confirm differ: [MOVE] takes a
+ * mix that is already under the grant somewhere else, [IMPORT] copies one in from outside it and
+ * leaves the original where it is. See [PlayerViewModel.confirmPick].
+ */
+enum class PickerMode { MOVE, IMPORT }
 
 /**
  * The mix loaded for playback, if any — which outlives playing it.
@@ -601,6 +612,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         loadMoveFolders()
     }
 
+    /**
+     * Open the same destination browser for a file handed in from outside the grant — see
+     * [handedOver].
+     *
+     * Deliberately not defaulted to the root: a library of any size is a set of folders, and
+     * dropping every shared file at the top would leave the tidying for later. The picker opens
+     * there and the user walks to where the mix belongs, exactly as a move does.
+     */
+    fun startImport(uri: Uri) {
+        val root = _library.value.path.firstOrNull() ?: run {
+            _message.value = Message.Text(R.string.msg_choose_folder_first)
+            return
+        }
+        _movePicker.value = MovePicker(listOf(uri), path = listOf(root), mode = PickerMode.IMPORT)
+        loadMoveFolders()
+    }
+
     fun openMoveFolder(folder: Folder) {
         val picker = _movePicker.value ?: return
         _movePicker.value = picker.copy(
@@ -641,7 +669,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * rename does. So does the player: if the mix on screen is one of the ones that moved, it is
      * re-read at its new home rather than left pointing at a file that is no longer there.
      */
-    fun confirmMove() {
+    fun confirmPick() {
+        when (_movePicker.value?.mode) {
+            PickerMode.MOVE -> confirmMove()
+            PickerMode.IMPORT -> confirmImport()
+            null -> Unit
+        }
+    }
+
+    private fun confirmMove() {
         val picker = _movePicker.value ?: return
         _movePicker.value = null
         val destination = picker.destination
@@ -678,6 +714,40 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             refresh()
             if (_favouriteMixes.value != null) loadFavourites()
+        }
+    }
+
+    /**
+     * Copy the handed-over mix into the folder the picker is showing, and go on with the copy.
+     *
+     * The original is left where it is — it belongs to whichever app sent it, and this app has no
+     * business deleting from there even on the rare grant that would allow it. What changes is
+     * which file the player is holding: from here on it is the one under the folder grant, so a
+     * rename, a tag edit or a star lands on a mix that will still be there after this task dies.
+     * Playback follows at the position it had reached, since it is the same audio either way and
+     * being sent back to the start for a copy would be its own small punishment.
+     */
+    private fun confirmImport() {
+        val picker = _movePicker.value ?: return
+        _movePicker.value = null
+        val source = picker.uris.firstOrNull() ?: return
+        // The name the handed-over mix was read with — the sender's provider may not answer twice,
+        // and it is the only name this file has.
+        val name = _openMix.value?.mix?.takeIf { it.uri == source }?.name
+            ?: _playback.value.mix?.takeIf { it.uri == source }?.name
+            ?: return
+        val destination = picker.destination
+        viewModelScope.launch {
+            store.importInto(source, name, destination.uri)
+                .onSuccess { copy ->
+                    val playing = _playback.value.takeIf { it.uri == source && it.playing }
+                    _handedOver.value = null
+                    openMix(copy)
+                    playing?.let { play(copy, it.positionMs) }
+                    _message.value = Message.Text(R.string.msg_added_one, listOf(destination.name))
+                    refresh()
+                }
+                .onFailure { _message.value = Message.of(it, R.string.msg_not_added) }
         }
     }
 
@@ -800,12 +870,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * The uri of the mix in the player when it came from outside the granted folder, or null when
+     * the player is on an ordinary library mix.
+     *
+     * What "Add to library" hangs off. It has to be remembered rather than worked out from the uri,
+     * because a handed-over file can come from any provider and there is no reliable test for "not
+     * under the tree" that does not also fail for mixes that are — so the one place that knows says
+     * so, and everything else asks here.
+     *
+     * A uri rather than a flag on the open mix, and it outlives the player screen on purpose:
+     * leaving the player keeps the file playing in the mini player, which then has to say the same
+     * thing about it, and coming back must find the screen as it was left. Everything that asks
+     * compares uris, so it is simply not true of any other mix. Cleared when the file has been
+     * copied in and the player has moved onto the copy, and replaced when another file is handed
+     * over.
+     */
+    private val _handedOver = MutableStateFlow<Uri?>(null)
+    val handedOver: StateFlow<Uri?> = _handedOver.asStateFlow()
+
+    /**
      * Open a mix another app has handed over — a share, or an "open with" — and play it.
      *
-     * It is opened in the player rather than dropped into the library, because it is not in the
-     * library and cannot be: the library is one granted folder, and this file is somewhere else
-     * entirely. What the app can honestly do with it is play it and show its waveform for as long
-     * as the grant on that one uri lasts.
+     * It is played rather than filed: the library is one granted folder and this file is somewhere
+     * else entirely, so what the app can do with it unasked is play it and draw it, for as long as
+     * the grant on that one uri lasts. Keeping it is the user's call and is one action away —
+     * [startImport] copies it into a folder they choose, which is the only way it can join the
+     * library at all.
      *
      * A file this device cannot decode says so through the ordinary refusal, since [play] runs the
      * same check it runs for anything else.
@@ -818,6 +908,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             openMix(mix)
+            _handedOver.value = mix.uri
             _showPlayer.value = true
             play(mix, 0)
         }

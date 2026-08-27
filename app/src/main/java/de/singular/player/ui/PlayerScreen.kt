@@ -33,12 +33,14 @@ import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -49,6 +51,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -128,9 +131,19 @@ fun PlayerScreen(
     onNormalize: (NormalizeMode, AudioTarget, Boolean) -> Unit,
     onConvert: (AudioTarget) -> Unit,
     onSaveNote: (String) -> Unit,
+    /**
+     * Given only when the mix came from another app, and then it is both the notice's button and
+     * the flag that dims everything that writes — see [PlayerOverflowAction].
+     */
+    onAddToLibrary: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val mix = open.mix
+    // A file on loan from another app: readable for as long as the grant lasts, and writable
+    // nowhere. Every edit on this screen rewrites the file in place or writes a second one beside
+    // it, and neither is something a uri lent for reading can do — so they are shown dimmed with
+    // the notice above them saying what would make them work, rather than left live to fail.
+    val onLoan = onAddToLibrary != null
     // "Loaded" and "playing" are not the same thing: a stopped mix keeps its place, here and in the
     // mini player, so that Play picks up where it left off rather than starting over.
     val loaded = playback.uri == mix.uri
@@ -160,7 +173,9 @@ fun PlayerScreen(
             // what an untagged mix means.
             canCopy = cover != null,
             onCopy = onCopyCover,
-            onEditTags = onEditTags,
+            // Copying the image out is a read and stays; editing is not on offer until the mix is
+            // in the library, which is what the notice below explains.
+            onEditTags = onEditTags.takeIf { !onLoan },
         )
         Spacer(Modifier.height(14.dp))
         Text(
@@ -219,7 +234,7 @@ fun PlayerScreen(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .clickable(enabled = mix.tagFormat != null) { noting = true }
+                    .clickable(enabled = mix.tagFormat != null && !onLoan) { noting = true }
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             )
         }
@@ -256,12 +271,21 @@ fun PlayerScreen(
             Text(formatDuration(durationMs), style = MaterialTheme.typography.bodySmall)
         }
 
+        // The notice sits directly above the tools it explains, which is where the dimming is: a
+        // row of grey buttons with the reason at the top of the screen would be two things to
+        // connect. It is the way out as well as the explanation — the same action the menu offers,
+        // put where the dead end is met.
+        onAddToLibrary?.let { add ->
+            OnLoanNotice(onAddToLibrary = add)
+        }
+
         Spacer(Modifier.height(12.dp))
         PlayerTools(
             mix = mix,
             targets = targets,
             busy = busy,
             hasNote = open.note.isNotEmpty(),
+            onLoan = onLoan,
             onNote = { noting = true },
             onNormalize = onNormalize,
             onConvert = onConvert,
@@ -314,6 +338,46 @@ fun PlayerScreen(
 }
 
 /**
+ * Why half this screen is dimmed, and the one press that undoes it.
+ *
+ * A line rather than a dialog: nothing has gone wrong and nothing is waiting on an answer — the mix
+ * plays perfectly well as it is, and this is only the reason the edits beneath it are grey. A
+ * dialog on arrival would be a door to close before hearing what someone sent you.
+ *
+ * It carries the action as well as the reason, because the alternative is a sentence that names a
+ * menu item and leaves the finding of it as an exercise.
+ */
+@Composable
+private fun OnLoanNotice(onAddToLibrary: () -> Unit) {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = ControlShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Info,
+                null,
+                Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.player_on_loan),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+            )
+            TextButton(onClick = onAddToLibrary) {
+                Text(stringResource(R.string.action_add_to_library_short))
+            }
+        }
+    }
+}
+
+/**
  * What can be done *to* the open mix, rather than with it — side by side above the transport, where
  * they can be seen rather than remembered.
  *
@@ -328,6 +392,8 @@ private fun PlayerTools(
     targets: List<AudioTarget>,
     busy: Boolean,
     hasNote: Boolean,
+    /** The mix is another app's file — see [PlayerScreen]. All three of these write; none can. */
+    onLoan: Boolean,
     onNote: () -> Unit,
     onNormalize: (NormalizeMode, AudioTarget, Boolean) -> Unit,
     onConvert: (AudioTarget) -> Unit,
@@ -344,14 +410,14 @@ private fun PlayerTools(
             // A rewrite takes a moment on a long mix, and the spinner sits in the button that
             // started it rather than somewhere else on the screen.
             busy = busy,
-            enabled = !busy,
+            enabled = !busy && !onLoan,
             onClick = { levelling = true },
         )
         ToolButton(
             text = stringResource(R.string.tool_convert),
             icon = Icons.Default.SwapHoriz,
             busy = false,
-            enabled = !busy && targets.isNotEmpty(),
+            enabled = !busy && !onLoan && targets.isNotEmpty(),
             onClick = { converting = true },
         )
         ToolButton(
@@ -363,7 +429,7 @@ private fun PlayerTools(
             busy = false,
             // A format this app cannot re-tag has nowhere to keep a note; the editor refuses those
             // for the same reason.
-            enabled = !busy && mix.tagFormat != null,
+            enabled = !busy && !onLoan && mix.tagFormat != null,
             tint = if (hasNote) MaterialTheme.colorScheme.primary else null,
             onClick = onNote,
         )
@@ -565,7 +631,8 @@ private fun CoverWithMenu(
     cover: ImageBitmap?,
     canCopy: Boolean,
     onCopy: () -> Unit,
-    onEditTags: () -> Unit,
+    /** Null while the mix is another app's file, which nothing here can write to. */
+    onEditTags: (() -> Unit)?,
 ) {
     var open by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -595,14 +662,16 @@ private fun CoverWithMenu(
                     },
                 )
             }
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_edit_info)) },
-                leadingIcon = { Icon(Icons.Default.Sell, null) },
-                onClick = {
-                    open = false
-                    onEditTags()
-                },
-            )
+            onEditTags?.let { edit ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_edit_info)) },
+                    leadingIcon = { Icon(Icons.Default.Sell, null) },
+                    onClick = {
+                        open = false
+                        edit()
+                    },
+                )
+            }
         }
     }
 }
@@ -615,6 +684,15 @@ private fun CoverWithMenu(
  * earns a permanent button: a delete beside a play button is an invitation to a mistake. The
  * favourite star is not here, being in the bar itself — a two-state control cannot show its state
  * from inside a menu that has to be opened to see it.
+ *
+ * [onAddToLibrary] being given is what says the mix came from another app, and it shortens the menu
+ * to the two things such a file can actually do: keep it, and pass it on. Renaming, moving and
+ * deleting are writes into the granted folder — the one place this file is not — so on a
+ * handed-over mix they would fail against a uri the sender lent us read-only, or, on the rare
+ * sender that lends more, quietly reach into another app's storage. Neither is something to offer.
+ * Editing the tags goes with them: the editor is a form whose only purpose is saving, and one that
+ * cannot save is a screen that wastes a person's typing. They all come back the moment the file is
+ * saved, because by then it is an ordinary mix.
  */
 @Composable
 fun PlayerOverflowAction(
@@ -623,6 +701,7 @@ fun PlayerOverflowAction(
     onShare: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
+    onAddToLibrary: (() -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -630,33 +709,51 @@ fun PlayerOverflowAction(
             Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.cd_more))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            // First, and above Rename, which is the pair worth getting the right way round: the
-            // title someone wants to fix is nearly always the one *in* the file, and renaming is
-            // the thing you do to the file it lives in.
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_edit_info)) },
-                leadingIcon = { Icon(Icons.Default.Sell, null) },
-                onClick = {
-                    open = false
-                    onEditTags()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_rename)) },
-                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
-                onClick = {
-                    open = false
-                    onRename()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_move_to)) },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, null) },
-                onClick = {
-                    open = false
-                    onMove()
-                },
-            )
+            // Only for a mix handed in from another app, and then it is the first thing in the
+            // menu: the file is on loan for as long as this task lives, and keeping it is the one
+            // thing worth doing to it before that runs out. Absent for library mixes, which are
+            // already where this puts things.
+            onAddToLibrary?.let { add ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_add_to_library)) },
+                    leadingIcon = { Icon(Icons.Default.LibraryAdd, null) },
+                    onClick = {
+                        open = false
+                        add()
+                    },
+                )
+            }
+            if (onAddToLibrary == null) {
+                // First, and above Rename, which is the pair worth getting the right way round: the
+                // title someone wants to fix is nearly always the one *in* the file, and renaming is
+                // the thing you do to the file it lives in.
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_edit_info)) },
+                    leadingIcon = { Icon(Icons.Default.Sell, null) },
+                    onClick = {
+                        open = false
+                        onEditTags()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_rename)) },
+                    leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
+                    onClick = {
+                        open = false
+                        onRename()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_move_to)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, null) },
+                    onClick = {
+                        open = false
+                        onMove()
+                    },
+                )
+            }
+            // Sharing a file on is reading it, which is exactly what the sender granted, so it
+            // stays whichever kind of mix this is.
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_share)) },
                 leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -665,14 +762,16 @@ fun PlayerOverflowAction(
                     onShare()
                 },
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_delete)) },
-                leadingIcon = { Icon(Icons.Default.Delete, null) },
-                onClick = {
-                    open = false
-                    onDelete()
-                },
-            )
+            if (onAddToLibrary == null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_delete)) },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                    onClick = {
+                        open = false
+                        onDelete()
+                    },
+                )
+            }
         }
     }
 }

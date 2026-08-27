@@ -20,6 +20,8 @@
         and only that folder will appear here.</string>
     <string name="library_empty">Nothing in this folder.</string>
     <string name="favourites_empty">Nothing marked yet. Tap the star on a mix to keep it here.</string>
+    <string name="player_title_unsaved">Shared file (unsaved)</string>
+    <string name="player_on_loan">This mix was shared from another app. Add it to your library to edit it.</string>
     <string name="player_no_waveform">This device cannot decode this file, so there is nothing to
         draw and nothing to play.</string>
 
@@ -28,6 +30,7 @@
       list of one kind of thing, and these are four different kinds.
     -->
     <string name="meta_separator" translatable="false">" · "</string>
+    <string name="mini_player_unsaved">%1$s (unsaved)</string>
     <string name="mini_player_of" translatable="false">" / "</string>
 
     <!-- Actions -->
@@ -46,6 +49,9 @@
     <string name="action_delete">Delete</string>
     <string name="action_share">Share</string>
     <string name="action_move_to">Move to…</string>
+    <string name="action_add_to_library">Add to library…</string>
+    <string name="action_add_to_library_short">Add</string>
+    <string name="action_add_here">Add here</string>
     <string name="action_move_here">Move here</string>
     <string name="action_choose_folder">Choose folder</string>
     <string name="action_change_folder">Change folder</string>
@@ -93,6 +99,8 @@
     </plurals>
     <string name="move_up_one_level">Up one level</string>
     <string name="move_no_subfolders">No folders in here.</string>
+
+    <string name="import_title">Add to library…</string>
 
     <string name="share_mix_title">Share mix</string>
 
@@ -212,6 +220,8 @@
     <string name="msg_not_deleted">That could not be deleted.</string>
     <string name="msg_not_moved">That could not be moved.</string>
     <string name="msg_moved_one">Moved to %1$s.</string>
+    <string name="msg_not_added">That could not be added to the library.</string>
+    <string name="msg_added_one">Added to %1$s.</string>
     <plurals name="msg_moved_many">
         <item quantity="one">Moved %1$d item to %2$s.</item>
         <item quantity="other">Moved %1$d items to %2$s.</item>

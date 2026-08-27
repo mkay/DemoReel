@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import de.singular.player.MovePicker
+import de.singular.player.PickerMode
 import de.singular.player.R
 import de.singular.player.storage.Folder
 
@@ -39,6 +40,10 @@ import de.singular.player.storage.Folder
  * the move is done. Only sub-folders are listed, because the mixes in them are not what is being
  * chosen, and any folder can be landed in — including the one on screen, which is what "Move here"
  * means at every level.
+ *
+ * It aims an import the same way — a file handed in from another app, on its way into the library
+ * — and says so in its title and its button. Nothing else changes: the question is the same one,
+ * and two dialogs asking it would be two dialogs to keep in step. See [PickerMode].
  */
 @Composable
 fun MoveDialog(
@@ -52,10 +57,10 @@ fun MoveDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                if (picker.uris.size == 1) {
-                    stringResource(R.string.move_title_one)
-                } else {
-                    pluralStringResource(
+                when {
+                    picker.mode == PickerMode.IMPORT -> stringResource(R.string.import_title)
+                    picker.uris.size == 1 -> stringResource(R.string.move_title_one)
+                    else -> pluralStringResource(
                         R.plurals.move_title_many, picker.uris.size, picker.uris.size,
                     )
                 },
@@ -116,7 +121,14 @@ fun MoveDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.action_move_here)) }
+            TextButton(onClick = onConfirm) {
+                Text(
+                    stringResource(
+                        if (picker.mode == PickerMode.IMPORT) R.string.action_add_here
+                        else R.string.action_move_here,
+                    ),
+                )
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }

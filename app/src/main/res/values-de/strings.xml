@@ -15,6 +15,9 @@
     <string name="library_empty">Dieser Ordner ist leer.</string>
     <string name="favourites_empty">Noch nichts markiert. Tippe den Stern eines Mixes an, um ihn hier
         zu behalten.</string>
+    <string name="mini_player_unsaved">%1$s (nicht gespeichert)</string>
+    <string name="player_title_unsaved">Geteilte Datei (nicht gespeichert)</string>
+    <string name="player_on_loan">Dieser Mix wurde aus einer anderen App geteilt. Füge ihn zur Bibliothek hinzu, um ihn zu bearbeiten.</string>
     <string name="player_no_waveform">Dieses Gerät kann die Datei nicht dekodieren — es gibt nichts
         zu zeichnen und nichts abzuspielen.</string>
 
@@ -34,6 +37,9 @@
     <string name="action_delete">Löschen</string>
     <string name="action_share">Teilen</string>
     <string name="action_move_to">Verschieben nach…</string>
+    <string name="action_add_to_library">Zur Bibliothek hinzufügen…</string>
+    <string name="action_add_to_library_short">Hinzufügen</string>
+    <string name="action_add_here">Hier hinzufügen</string>
     <string name="action_move_here">Hierher verschieben</string>
     <string name="action_choose_folder">Ordner wählen</string>
     <string name="action_change_folder">Ordner ändern</string>
@@ -84,6 +90,8 @@
     </plurals>
     <string name="move_up_one_level">Eine Ebene höher</string>
     <string name="move_no_subfolders">Hier gibt es keine Ordner.</string>
+
+    <string name="import_title">Zur Bibliothek hinzufügen…</string>
 
     <string name="share_mix_title">Mix teilen</string>
 
@@ -205,6 +213,8 @@
     <string name="msg_not_deleted">Das konnte nicht gelöscht werden.</string>
     <string name="msg_not_moved">Das konnte nicht verschoben werden.</string>
     <string name="msg_moved_one">Nach %1$s verschoben.</string>
+    <string name="msg_not_added">Das konnte nicht zur Bibliothek hinzugefügt werden.</string>
+    <string name="msg_added_one">Zu %1$s hinzugefügt.</string>
     <plurals name="msg_moved_many">
         <item quantity="one">%1$d Element nach %2$s verschoben.</item>
         <item quantity="other">%1$d Elemente nach %2$s verschoben.</item>

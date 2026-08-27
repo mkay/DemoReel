@@ -437,6 +437,51 @@ class MixStore(context: Context) {
     }
 
     /**
+     * Copy a file this app does not own into [destination], leaving the original untouched.
+     *
+     * The other half of [handedOver]: a mix another app passed in lives only as long as the grant
+     * on its uri, and this is how the user keeps it. Not [copyInto], which is a move's fallback and
+     * ends by deleting what it copied — a file in someone else's storage is not this app's to
+     * remove, and the sender rarely grants the write that would take.
+     *
+     * [name] comes from the caller rather than from a query, because the source may be no kind of
+     * document at all — a `file://` uri or a provider that answers no columns — and [handedOver]
+     * has already worked out the best name available for exactly that case. Where the destination
+     * already holds that name the provider mints a distinct one; the copy is never written over a
+     * mix that is already in the library.
+     *
+     * Returns the mix as it now sits under the grant, read back from disk so the caller can open
+     * the copy rather than go on holding the uri that is about to expire.
+     */
+    suspend fun importInto(source: Uri, name: String, destination: Uri): Result<Mix> =
+        withContext(Dispatchers.IO) {
+            val mime = resolver.getType(source)
+                ?.takeUnless { it == DocumentsContract.Document.MIME_TYPE_DIR }
+                ?: MIME_AUDIO
+            val copy = runCatching {
+                DocumentsContract.createDocument(resolver, destination, mime, name)
+            }.getOrNull() ?: return@withContext Result.failure(
+                StorageException(StorageFailure.CANNOT_WRITE_INTO_FOLDER),
+            )
+
+            val written = runCatching {
+                resolver.openInputStream(source)?.use { input ->
+                    openTruncating(copy).use { input.copyTo(it, BLOCK) }
+                } ?: throw StorageException(StorageFailure.CANNOT_READ_FILE)
+            }
+            if (written.isFailure) {
+                // Half a file in the library is worse than none: it would list, play to the break
+                // and look like a bad recording rather than a failed copy.
+                runCatching { DocumentsContract.deleteDocument(resolver, copy) }
+                return@withContext Result.failure(written.exceptionOrNull()!!)
+            }
+
+            forget(copy)
+            describe(copy)?.let { Result.success(it) }
+                ?: Result.failure(StorageException(StorageFailure.COPY_NOT_WRITTEN))
+        }
+
+    /**
      * The folder [uri] sits in, worked out from its document id — a path under the granted tree for
      * the providers this app meets. Null when the id is not path-shaped or leads outside the grant,
      * which is [move]'s cue to take the long way round.

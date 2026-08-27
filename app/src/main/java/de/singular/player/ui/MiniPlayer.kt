@@ -67,6 +67,12 @@ fun MiniPlayer(
     onSeek: (Long) -> Unit,
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * The mix is a file another app shared in, which this bar's close button is the end of: the
+     * grant dies with the task and nothing on disk is ours. Said in the title, because the cross
+     * sits an inch away and nothing else here would warn that pressing it is final.
+     */
+    unsaved: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val mix = playback.mix?.takeIf { playback.playing || !playback.finished } ?: return
@@ -90,7 +96,11 @@ fun MiniPlayer(
                         .padding(vertical = 4.dp),
                 ) {
                     Text(
-                        mix.displayTitle,
+                        if (unsaved) {
+                            stringResource(R.string.mini_player_unsaved, mix.displayTitle)
+                        } else {
+                            mix.displayTitle
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
