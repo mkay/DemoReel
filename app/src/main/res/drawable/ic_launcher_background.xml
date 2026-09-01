@@ -2,15 +2,15 @@
   SPDX-License-Identifier: CC-BY-4.0
   Copyright (C) 2026 Kreuder <mk@singular.de>
 
-  The icon's ground: a dark tile with the reel's disc on it, as the mark sits on the page in
-  @drawable/ic_wordmark. The tile is a full-bleed rectangle so that every launcher mask — circle,
-  squircle, rounded square — is filled to its own edge; the gradient is no longer the ground but
-  the disc, slate-400 into slate-500, drawn where the artwork drew it.
+  The icon's ground: a dark tile (slate-800) with the reel's disc on it, as the mark sits on the
+  page in @drawable/ic_wordmark. The tile is a full-bleed rectangle so that every launcher mask —
+  circle, squircle, rounded square — is filled to its own edge; the gradient is no longer the
+  ground but the disc, slate-400 into slate-500, drawn where the artwork drew it.
 
-  The disc is the circle inscribed in the adaptive icon's central 72 units, which is where
+  The disc is the circle inscribed in the adaptive icon's central 60 units, which is where
   @drawable/ic_launcher_foreground maps the mark's own disc — so the arcs still meet the edge at
-  the proportion they were drawn at, and a round mask cuts along the disc's edge rather than
-  through the tile.
+  the proportion they were drawn at, and every launcher mask leaves a ring of dark tile around
+  the disc rather than cutting along its edge.
 
   The ramp is pinned to where it ran in the artwork (the disc's inscribed diagonal, mapped onto
   this canvas), so the mark meets the same colours it was drawn against.
@@ -23,17 +23,17 @@
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#020618"
+        android:fillColor="#1E293B"
         android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
 
-    <path android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18 Z">
+    <path android:pathData="M54,24 A30,30 0 1,0 54,84 A30,30 0 1,0 54,24 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="27.42"
-                android:startY="27.75"
-                android:endX="80.58"
-                android:endY="79.79">
+                android:startX="31.85"
+                android:startY="32.13"
+                android:endX="76.15"
+                android:endY="75.49">
                 <item android:offset="0" android:color="#90A1B9" />
                 <item android:offset="1" android:color="#62748E" />
             </gradient>

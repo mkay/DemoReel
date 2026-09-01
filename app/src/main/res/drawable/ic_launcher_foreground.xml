@@ -6,10 +6,11 @@
   things the app is, in one shape. Traced from icon_v01.svg.
 
   The artwork was drawn on its own 1495-unit disc; the group maps that disc onto the adaptive
-  icon's central 72 units, so the disc's edge lands exactly on the circle a round mask cuts and the
-  arcs meet it at the proportion they were drawn at. The disc itself is not redrawn here — it is
-  the gradient circle in @drawable/ic_launcher_background, which also lays the dark tile the disc
-  sits on, so square and squircle masks are filled to their corners too.
+  icon's central 60 units, so the mark sits smaller on the tile with a margin of dark ground inside
+  every launcher mask, the way the sibling apps' marks do. The arcs still meet the disc's edge at
+  the proportion they were drawn at. The disc itself is not redrawn here — it is the gradient
+  circle in @drawable/ic_launcher_background, which also lays the dark tile the disc sits on, so
+  square and squircle masks are filled to their corners too.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -18,10 +19,10 @@
     android:viewportHeight="108">
 
     <group
-        android:translateX="18"
-        android:translateY="18"
-        android:scaleX="0.0481605"
-        android:scaleY="0.0481605">
+        android:translateX="24"
+        android:translateY="24"
+        android:scaleX="0.04013375"
+        android:scaleY="0.04013375">
 
         <path
             android:fillColor="#020618"
