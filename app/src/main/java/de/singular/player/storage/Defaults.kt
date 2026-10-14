@@ -45,15 +45,22 @@ class Defaults(context: Context) {
         titleFromFilename = prefs.getBoolean(KEY_TITLE_FROM_FILENAME, true),
     )
 
-    /** Store the text fields. The cover is [setCover]'s business — [TagDefaults.hasCover] is read. */
+    /**
+     * Store the text fields. The cover is [setCover]'s business — [TagDefaults.hasCover] is read.
+     *
+     * Stored exactly as typed, spaces and all. The settings screen saves on every keystroke and
+     * shows what was stored, so trimming here took a space off the end of a field the moment it was
+     * typed — "The Beige" could not be followed by a space to start "Committee". Trimming belongs
+     * where a default is used, in [de.singular.player.applyTo].
+     */
     fun save(defaults: TagDefaults) {
         prefs.edit {
-            putString(KEY_ARTIST, defaults.artist.trim())
-            putString(KEY_ALBUM_ARTIST, defaults.albumArtist.trim())
-            putString(KEY_ALBUM, defaults.album.trim())
-            putString(KEY_GENRE, defaults.genre.trim())
-            putString(KEY_YEAR, defaults.year.trim())
-            putString(KEY_COMMENT, defaults.comment.trim())
+            putString(KEY_ARTIST, defaults.artist)
+            putString(KEY_ALBUM_ARTIST, defaults.albumArtist)
+            putString(KEY_ALBUM, defaults.album)
+            putString(KEY_GENRE, defaults.genre)
+            putString(KEY_YEAR, defaults.year)
+            putString(KEY_COMMENT, defaults.comment)
             putBoolean(KEY_TITLE_FROM_FILENAME, defaults.titleFromFilename)
         }
     }

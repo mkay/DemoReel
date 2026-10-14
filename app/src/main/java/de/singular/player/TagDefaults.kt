@@ -46,8 +46,8 @@ data class TagDefaults(
 ) {
     /** Whether there is anything to apply at all — an empty set of defaults is not worth offering. */
     val isEmpty: Boolean
-        get() = artist.isEmpty() && albumArtist.isEmpty() && album.isEmpty() &&
-            genre.isEmpty() && year.isEmpty() && comment.isEmpty() &&
+        get() = artist.isBlank() && albumArtist.isBlank() && album.isBlank() &&
+            genre.isBlank() && year.isBlank() && comment.isBlank() &&
             !hasCover && !titleFromFilename
 }
 
@@ -71,13 +71,19 @@ enum class ApplyMode { FILL_GAPS, REPLACE }
  *
  * Pure, and deliberately so: the same function fills in the editor's form and drives the bulk apply
  * over a selection, so what the editor previews is exactly what a batch would write.
+ *
+ * The defaults are trimmed here rather than when they are saved, so the settings screen can keep a
+ * space someone has only just typed; a default of nothing but spaces is no opinion at all.
  */
 fun TagDefaults.applyTo(tags: Tags, mode: ApplyMode, fallbackTitle: String): Tags {
-    fun pick(current: String, default: String): String = when {
-        default.isEmpty() -> current // no opinion — see [ApplyMode]
-        mode == ApplyMode.REPLACE -> default
-        current.isEmpty() -> default
-        else -> current
+    fun pick(current: String, typed: String): String {
+        val default = typed.trim()
+        return when {
+            default.isEmpty() -> current // no opinion — see [ApplyMode]
+            mode == ApplyMode.REPLACE -> default
+            current.isEmpty() -> default
+            else -> current
+        }
     }
     return tags.copy(
         // The title never takes a default and is never replaced; it only ever gets the filename,
