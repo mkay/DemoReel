@@ -5,16 +5,20 @@
 
 An Android player and tag editor for your own demo mixes. This is not a traditional music player.
 
-This is another app I built for myself. I use it to manage my own demos and mixes without the
-device's media library spilling into them. It is probably only useful if you are a recording
-musician, or otherwise have a lot of audio files to organise.
+It's another app I built for myself. I use it to manage my own demos and mixes without the device's media library spilling into them. It is probably only useful if you are a recording musician, or otherwise have a lot of audio files to organise — which is why I'm not adding yet another audio app to F-Droid. If it fits what you do, download and sideload the APK from the [releases page](https://github.com/mkay/DemoReel/releases), or [open an issue](https://github.com/mkay/DemoReel/issues) if you want it on F-Droid.
 
 It reads **one folder** — the one you point it at — and nothing else. No `READ_MEDIA_AUDIO`, no
 media-library access, no network, no analytics. The ringtones, the podcasts, the voice memos and
 every track in every other app's download folder cannot appear here, because nothing but that one
 folder is ever asked for.
 
+Oh, and it has an Android Auto interface, so you can hum along while driving. Note that Android Auto only lists apps from the Play Store unless you enable *Unknown sources* in its developer settings.
+
 Requires Android 8.0 (API 26) or newer.
+
+## Screenshots
+
+<img src="docs/screenshot.png" alt="Demo Reel's library, with a folder of mixes and one in the mini player, and the tag editor with a cover, title, artist and album" width="640" />
 
 ---
 
