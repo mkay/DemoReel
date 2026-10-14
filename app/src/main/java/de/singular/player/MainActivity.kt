@@ -3,11 +3,14 @@
 package de.singular.player
 
 import android.Manifest
+import android.app.SearchManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.border
@@ -64,8 +68,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.core.content.ContextCompat
-import androidx.core.content.IntentCompat
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -80,9 +82,11 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import de.singular.player.media.VOICE_TAG
 import de.singular.player.storage.Mix
 import de.singular.player.ui.ApplyModeDialog
 import de.singular.player.ui.ControlShape
@@ -125,6 +129,17 @@ private enum class Screen(@StringRes val title: Int) {
  * that choice hangs off this base class. Nothing else about AppCompat is used — the UI is Compose
  * from [setContent] down, and the XML theme draws nothing.
  */
+/**
+ * What was said to the assistant, if this intent is "play … on Demo Reel": the words, and the extras
+ * the assistant may have split them into. Null for any other intent.
+ */
+private fun spokenRequest(intent: Intent): Pair<String, Bundle?>? =
+    if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
+        intent.getStringExtra(SearchManager.QUERY).orEmpty() to intent.extras
+    } else {
+        null
+    }
+
 /** The audio a share or an "open with" carries, or null if this intent is neither. */
 private fun audioHandedOver(intent: Intent): Uri? = when (intent.action) {
     Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
@@ -143,14 +158,22 @@ class MainActivity : AppCompatActivity() {
      */
     private var handedOver by mutableStateOf<Uri?>(null)
 
+    /** Held by the Activity rather than fetched in the composition, so intents can reach it too. */
+    private val vm: PlayerViewModel by viewModels()
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handedOver = audioHandedOver(intent)
+        // Only on a fresh start: a recreate — a language change, say — hands the same intent back,
+        // and playing the request a second time would restart whatever it had started.
+        if (savedInstanceState == null) spokenRequest(intent)?.let { (query, extras) ->
+            Log.d(VOICE_TAG, "activity: \"$query\" on a fresh start")
+            vm.playFromSearch(query, extras)
+        }
         enableEdgeToEdge()
         setContent {
             val view = LocalView.current
-            val vm: PlayerViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
 
             // Keep the system bar icons legible against whichever theme is in effect (the
@@ -1134,5 +1157,9 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         audioHandedOver(intent)?.let { handedOver = it }
+        spokenRequest(intent)?.let { (query, extras) ->
+            Log.d(VOICE_TAG, "activity: \"$query\" to the running app")
+            vm.playFromSearch(query, extras)
+        }
     }
 }

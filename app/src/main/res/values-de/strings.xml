@@ -321,4 +321,5 @@
     <!-- Appended to the filename of a normalised copy: "Live set normalisiert.flac". -->
     <string name="file_suffix_normalised">normalisiert</string>
 
+    <string name="voice_nothing_found">Nichts in Demo Reel passt zu „%1$s“</string>
 </resources>

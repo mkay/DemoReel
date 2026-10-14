@@ -4,18 +4,24 @@ package de.singular.player.media
 
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.provider.DocumentsContract
+import android.provider.MediaStore
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import de.singular.player.MixQuery
 import de.singular.player.R
 import de.singular.player.storage.Mix
 import de.singular.player.storage.MixStore
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The folder tree as a head unit browses it.
  *
  * A car asks for a node's children and draws them as rows; there is no scrolling through a
- * thousand, no search, and no second chance if a row does nothing. So this is deliberately flat in
+ * thousand, no typing, and no second chance if a row does nothing. So this is deliberately flat in
  * spirit even where the tree is deep: a folder's rows are its actions first, then its subfolders,
  * then its mixes, and every row does something on the first press.
  *
@@ -31,6 +37,11 @@ import de.singular.player.storage.MixStore
  * Media3 has custom commands, and a head unit may or may not surface them. A row is drawn by every
  * browser there is, reads as what it does, and costs one press. For "shuffle everything" at the
  * wheel that is the whole requirement.
+ *
+ * ## Asking out loud
+ *
+ * The one way to find a mix without browsing is to say it — see [playbackForSearch], which answers
+ * with the same search the library's field uses.
  */
 class Library(context: Context, private val store: MixStore) {
 
@@ -84,6 +95,53 @@ class Library(context: Context, private val store: MixStore) {
             folderUri(mediaId.removePrefix(PLAY))?.let { Queue.inOrder(store.list(it).mixes) }
                 ?: emptyList()
         else -> emptyList()
+    }
+
+    /**
+     * What a spoken request — "play Anaconda on Demo Reel" — should play, in order.
+     *
+     * Answered by the library's own search ([MixStore.search] with a [MixQuery]) over the whole
+     * tree, so a mix is found by its file name, its folders or its tags, exactly as typing the same
+     * words into the search field would find it. Newest first: a demo is bounced again and again,
+     * and the one asked for by name is the latest of them.
+     *
+     * The first batch of matches is played, not the search's whole answer. The search shows what
+     * matches by name at once and only then opens the rest of the tree for its tags, which on a
+     * cold start is twenty seconds for a library of four hundred mixes — twenty seconds of silence
+     * after asking, which from the driver's seat is a request that was not heard. A mix found by
+     * name starts in about a second; one found only by its tags waits until the first such turns
+     * up. What the rest of the search would have added does not join the run, which for a request
+     * by name is no loss.
+     *
+     * And a request that finds nothing at all gives up after [SPOKEN_SEARCH_LIMIT_MS] rather than
+     * reading the whole tree to be sure: on a cold start that is a quarter of a minute before the
+     * answer "nothing", with every request after it queued behind. The price is that on a cold
+     * start a mix named only in its tags, in a folder not yet read, can be missed.
+     *
+     * The assistant often splits what was said into fields as well — title, artist, album — and
+     * those are used where they arrive, because the raw sentence carries joining words ("Anaconda
+     * by Kreuder") that every word of a [MixQuery] would then have to find.
+     *
+     * Nothing said at all ("play Demo Reel") is a request for music rather than for a mix, and gets
+     * the same run as "shuffle everything". Empty means nothing matched; see the caller for what
+     * happens then.
+     */
+    suspend fun playbackForSearch(query: String, extras: Bundle?): List<Mix> {
+        val root = store.rootFolder() ?: return emptyList()
+        val fields = listOf(
+            MediaStore.EXTRA_MEDIA_TITLE,
+            MediaStore.EXTRA_MEDIA_ARTIST,
+            MediaStore.EXTRA_MEDIA_ALBUM,
+        ).mapNotNull { extras?.getString(it)?.takeIf(String::isNotBlank) }
+        val spoken = MixQuery.of(fields.joinToString(" ").ifEmpty { query })
+            ?: return Queue.shuffled(store.allMixes())
+        Log.d(VOICE_TAG, "search: \"$query\" as \"${fields.joinToString(" ").ifEmpty { query }}\"")
+        val started = System.currentTimeMillis()
+        val found = withTimeoutOrNull(SPOKEN_SEARCH_LIMIT_MS) {
+            store.search(root, spoken::matches).firstOrNull { it.isNotEmpty() }
+        }.orEmpty()
+        Log.d(VOICE_TAG, "search: ${found.size} found in ${System.currentTimeMillis() - started} ms")
+        return found
     }
 
     /**
@@ -207,5 +265,21 @@ class Library(context: Context, private val store: MixStore) {
          * still browsable on the phone, where scrolling is free.
          */
         private const val LIMIT = 100
+
+        /** How long a spoken request searches before answering that nothing matches. */
+        private const val SPOKEN_SEARCH_LIMIT_MS = 3_000L
     }
 }
+
+/**
+ * The log tag for a spoken request's way through the app — Activity, view model, session, search —
+ * so `adb logcat -s DemoReelVoice` shows the whole of one request and nothing else. A request said
+ * in a car cannot be watched any other way.
+ */
+internal const val VOICE_TAG = "DemoReelVoice"
+
+/**
+ * The log tag for what the player is told and what it does — who sent a play, a pause or a seek,
+ * and the reason the player gives for each change. `adb logcat -s DemoReelPlayback`.
+ */
+internal const val PLAYBACK_TAG = "DemoReelPlayback"

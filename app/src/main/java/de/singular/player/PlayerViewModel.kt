@@ -7,6 +7,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.util.Log
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,9 +16,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
-import de.singular.player.media.PlaybackService
 import de.singular.player.audio.Artwork
 import de.singular.player.audio.AudioDecoder
 import de.singular.player.audio.AudioTarget
@@ -24,6 +27,9 @@ import de.singular.player.audio.Envelope
 import de.singular.player.audio.Mp3
 import de.singular.player.audio.NormalizeMode
 import de.singular.player.audio.Tags
+import de.singular.player.media.PLAYBACK_TAG
+import de.singular.player.media.PlaybackService
+import de.singular.player.media.VOICE_TAG
 import de.singular.player.storage.Defaults
 import de.singular.player.storage.Favourites
 import de.singular.player.storage.Folder
@@ -34,6 +40,7 @@ import de.singular.player.storage.Mix
 import de.singular.player.storage.MixStore
 import de.singular.player.storage.Recents
 import de.singular.player.storage.StorageFailure
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -47,7 +54,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /**
  * A mix with its key — the path under the root that favourites are kept against.
@@ -468,6 +474,56 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             connected.repeatMode =
                 if (_looping.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             adoptSessionState()
+            pendingSpoken?.let { (query, extras) ->
+                Log.d(VOICE_TAG, "model: connected, sending held \"$query\"")
+                sendSpoken(connected, query, extras)
+            }
+            pendingSpoken = null
+        }, MoreExecutors.directExecutor())
+    }
+
+    /**
+     * A spoken request that arrived before the session was connected — the assistant starting the
+     * app cold, which is the usual way it arrives. Played as soon as there is a session to give it
+     * to, and dropped if a second one comes in first.
+     */
+    private var pendingSpoken: Pair<String, Bundle?>? = null
+
+    /**
+     * Play what was asked for out loud — "play Anaconda on Demo Reel".
+     *
+     * Not answered here. The words go to the session as [PlaybackService.SPOKEN], and the service
+     * answers them with the same search it uses for the same words said in the car
+     * (`Library.playbackForSearch`), so there is one meaning for a spoken request wherever it was
+     * said. Why a command and not a media item is on [PlaybackService.SPOKEN]. The phone follows along through [playerListener], as it does for a run started in the
+     * car.
+     */
+    fun playFromSearch(query: String, extras: Bundle?) {
+        val player = controller
+        if (player == null) {
+            Log.d(VOICE_TAG, "model: \"$query\" held until the session connects")
+            pendingSpoken = query to extras
+        } else {
+            sendSpoken(player, query, extras)
+        }
+    }
+
+    private fun sendSpoken(player: MediaController, query: String, extras: Bundle?) {
+        // A tap that was still opening a mix would otherwise land on top of the request.
+        playJob?.cancel()
+        Log.d(VOICE_TAG, "model: sending \"$query\" to the session")
+        val args = Bundle().apply {
+            putString(PlaybackService.KEY_QUERY, query)
+            putBundle(PlaybackService.KEY_EXTRAS, extras)
+        }
+        val command = SessionCommand(PlaybackService.SPOKEN, Bundle.EMPTY)
+        val answer = player.sendCustomCommand(command, args)
+        answer.addListener({
+            val result = runCatching { answer.get() }.getOrNull()
+            // Asked on the phone, so answered on the phone. In the car the session says it itself.
+            if (result?.resultCode != SessionResult.RESULT_SUCCESS) {
+                _message.value = Message.Text(R.string.voice_nothing_found, listOf(query))
+            }
         }, MoreExecutors.directExecutor())
     }
 
@@ -491,6 +547,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
          * session does: whoever started the playback, the phone follows along.
          */
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+            Log.d(PLAYBACK_TAG, "model: now ${item?.localConfiguration?.uri?.lastPathSegment}")
             val uri = item?.localConfiguration?.uri ?: return
             if (loadedMix?.uri == uri) return
             viewModelScope.launch {

@@ -2,6 +2,7 @@ package de.singular.player.media
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -14,12 +15,14 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import de.singular.player.R
+import de.singular.player.storage.Mix
 import de.singular.player.storage.MixStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +90,7 @@ class PlaybackService : MediaLibraryService() {
             // otherwise sleep out from under playback.
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        exo.addListener(TransportLog)
         player = exo
         session = MediaLibrarySession.Builder(this, exo, Callback())
             .setCustomLayout(listOf(repeatButton(exo.repeatMode)))
@@ -172,10 +176,24 @@ class PlaybackService : MediaLibraryService() {
                 .setAvailableSessionCommands(
                     default.availableSessionCommands.buildUpon()
                         .add(SessionCommand(REPEAT, Bundle.EMPTY))
+                        .add(SessionCommand(SPOKEN, Bundle.EMPTY))
                         .build(),
                 )
                 .setCustomLayout(listOf(repeatButton(player?.repeatMode ?: Player.REPEAT_MODE_OFF)))
                 .build()
+        }
+
+        /** Who asked the player to do what — see [TransportLog] for what it then did. */
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (playerCommand in LoggedCommands) {
+                val name = LoggedCommands[playerCommand]
+                Log.d(PLAYBACK_TAG, "command $name from ${controller.packageName}")
+            }
+            return super.onPlayerCommandRequest(session, controller, playerCommand)
         }
 
         override fun onCustomCommand(
@@ -183,14 +201,24 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             customCommand: SessionCommand,
             args: Bundle,
-        ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction != REPEAT) {
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        ): ListenableFuture<SessionResult> = when (customCommand.customAction) {
+            REPEAT -> {
+                toggleRepeat()
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
-            toggleRepeat()
-            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            SPOKEN -> future("spoken") {
+                val query = args.getString(KEY_QUERY).orEmpty()
+                Log.d(VOICE_TAG, "session: spoken command from ${controller.packageName}")
+                val run = spokenRun(query, args.getBundle(KEY_EXTRAS))
+                if (run.isEmpty()) {
+                    SessionResult(SessionError.ERROR_BAD_VALUE)
+                } else {
+                    startRun(run)
+                    SessionResult(SessionResult.RESULT_SUCCESS)
+                }
+            }
+            else -> Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
         }
-
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
@@ -217,7 +245,7 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<MediaItem>> = future {
             val item = library.item(mediaId)
             if (item == null) {
-                LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             } else {
                 LibraryResult.ofItem(item, null)
             }
@@ -239,21 +267,20 @@ class PlaybackService : MediaLibraryService() {
             mediaItems: MutableList<MediaItem>,
             startIndex: Int,
             startPositionMs: Long,
-        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = future {
-            val id = mediaItems.firstOrNull()?.mediaId
-            val run = id?.let { library.playbackFor(it) }.orEmpty()
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = future("set") {
+            val first = mediaItems.firstOrNull()
+            if (first?.isSpokenRequest == true) {
+                Log.d(VOICE_TAG, "session: set, spoken, from ${controller.packageName}")
+            }
+            val run = when {
+                first == null -> emptyList()
+                first.isSpokenRequest -> spoken(session, controller, first)
+                else -> library.playbackFor(first.mediaId)
+            }
             if (run.isEmpty()) {
                 MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
             } else {
-                // Repeat-one is the phone's hold-the-transport gesture, for sitting with a take.
-                // Inheriting it here would strand a run on its first mix, which from the driver's
-                // seat is indistinguishable from a shuffle that does not work.
-                player?.repeatMode = Player.REPEAT_MODE_OFF
-                // The button's label says what a press will do, so it has to follow the mode it
-                // was just silently taken out of.
-                this@PlaybackService.session?.setCustomLayout(
-                    listOf(repeatButton(Player.REPEAT_MODE_OFF)),
-                )
+                runStarting()
                 MediaSession.MediaItemsWithStartPosition(
                     run.map { MediaItem.fromUri(it.uri) },
                     0,
@@ -266,15 +293,82 @@ class PlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> = future {
+        ): ListenableFuture<MutableList<MediaItem>> = future("add") {
+            if (mediaItems.any { it.isSpokenRequest }) {
+                Log.d(VOICE_TAG, "session: add, spoken, from ${controller.packageName}")
+            }
             mediaItems.flatMap { item ->
-                if (item.localConfiguration != null) {
-                    listOf(item)
+                if (item.localConfiguration != null) return@flatMap listOf(item)
+                val mixes = if (item.isSpokenRequest) {
+                    spoken(session, controller, item)
                 } else {
-                    library.playbackFor(item.mediaId).map { MediaItem.fromUri(it.uri) }
+                    library.playbackFor(item.mediaId)
                 }
+                mixes.map { MediaItem.fromUri(it.uri) }
             }.toMutableList()
         }
+    }
+
+    /**
+     * About to replace whatever is playing with a run of mixes: the session's half of starting
+     * one, whether a car set the items or [startRun] is about to.
+     */
+    private fun runStarting() {
+        // Repeat-one is the phone's hold-the-transport gesture, for sitting with a take.
+        // Inheriting it here would strand a run on its first mix, which from the driver's seat is
+        // indistinguishable from a shuffle that does not work.
+        player?.repeatMode = Player.REPEAT_MODE_OFF
+        // The button's label says what a press will do, so it has to follow the mode it was just
+        // silently taken out of.
+        session?.setCustomLayout(listOf(repeatButton(Player.REPEAT_MODE_OFF)))
+    }
+
+    /** Load [run] into the player and start it from its first mix. */
+    private fun startRun(run: List<Mix>) {
+        val exo = player ?: return
+        runStarting()
+        exo.setMediaItems(run.map { MediaItem.fromUri(it.uri) }, 0, C.TIME_UNSET)
+        exo.prepare()
+        exo.play()
+    }
+
+    /**
+     * A request said out loud to the car — or to anything else that asks the standard way. It
+     * arrives as an item with no id and no uri, only the words, in its request metadata. The app's
+     * own Activity asks with [SPOKEN] instead.
+     */
+    private val MediaItem.isSpokenRequest: Boolean
+        get() = localConfiguration == null && requestMetadata.searchQuery != null
+
+    /** What [query] plays, logged — see [Library.playbackForSearch]. */
+    private suspend fun spokenRun(query: String, extras: Bundle?): List<Mix> {
+        val run = library.playbackForSearch(query, extras)
+        Log.d(VOICE_TAG, "session: \"$query\" plays ${run.size}")
+        return run
+    }
+
+    /**
+     * What a spoken request plays — see [Library.playbackForSearch].
+     *
+     * A request that matches nothing says so, to whoever asked, and then fails. Passing it through
+     * would hand the player an item with nothing in it to play, which stops the music and then
+     * shows nothing at all: from the driver's seat, a request that was not heard.
+     */
+    private suspend fun spoken(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        item: MediaItem,
+    ): List<Mix> {
+        val query = item.requestMetadata.searchQuery.orEmpty()
+        val run = spokenRun(query, item.requestMetadata.extras)
+        if (run.isEmpty()) {
+            val said = getString(R.string.voice_nothing_found, query)
+            session.sendError(controller, SessionError(SessionError.ERROR_BAD_VALUE, said))
+            // Failing the future is what makes the session drop the command and leave the transport
+            // as it was.
+            throw NoSuchElementException("Nothing matches \"$query\"")
+        }
+        return run
     }
 
     /**
@@ -284,17 +378,83 @@ class PlaybackService : MediaLibraryService() {
      * happen on the main thread — and the car is waiting, so it must not take long either. See the
      * limits in [Library].
      */
-    private companion object {
+    companion object {
         /** The custom action id for the repeat toggle. */
-        const val REPEAT = "de.singular.player.REPEAT"
+        private const val REPEAT = "de.singular.player.REPEAT"
+
+        /**
+         * The custom action id for a spoken request from the app's own Activity: the words in
+         * [KEY_QUERY], the assistant's extras in [KEY_EXTRAS].
+         *
+         * A command rather than a set of media items, which is how a car asks. A controller that
+         * sets items applies them to its own copy of the player at once, before the session has
+         * answered — so a request that matches nothing leaves that copy holding an item with
+         * nothing in it while the real player plays on, and the phone reads its position and its
+         * mix from the wrong one until something else changes. A command changes nothing on the
+         * asking side; the session loads the run, or answers that there is none.
+         */
+        const val SPOKEN = "de.singular.player.SPOKEN"
+        const val KEY_QUERY = "query"
+        const val KEY_EXTRAS = "extras"
+
+        /** The commands that start, stop or move playback, by name, for [onPlayerCommandRequest]. */
+        private val LoggedCommands = mapOf(
+            Player.COMMAND_PLAY_PAUSE to "play/pause",
+            Player.COMMAND_PREPARE to "prepare",
+            Player.COMMAND_STOP to "stop",
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM to "seek",
+            Player.COMMAND_SEEK_TO_MEDIA_ITEM to "seek to item",
+            Player.COMMAND_SET_MEDIA_ITEM to "set item",
+            Player.COMMAND_CHANGE_MEDIA_ITEMS to "change items",
+        )
     }
 
-    private fun <T> future(block: suspend () -> T): ListenableFuture<T> {
+    /**
+     * What the player did, and the reason it gives — the other half of the commands logged in
+     * [Callback.onPlayerCommandRequest]. A pause nobody asked for shows up here with its cause:
+     * audio focus, headphones out, or the end of the run.
+     */
+    private object TransportLog : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            val why = when (reason) {
+                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "asked"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "audio focus lost"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "headphones out"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "remote"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "end of item"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "suppressed too long"
+                else -> "reason $reason"
+            }
+            Log.d(PLAYBACK_TAG, "player: ${if (playWhenReady) "play" else "pause"} ($why)")
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                val from = oldPosition.positionMs
+                Log.d(PLAYBACK_TAG, "player: seek $from -> ${newPosition.positionMs} ms")
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            Log.d(PLAYBACK_TAG, "player: now ${mediaItem?.localConfiguration?.uri?.lastPathSegment}")
+        }
+    }
+
+    private fun <T> future(name: String = "", block: suspend () -> T): ListenableFuture<T> {
         val settable = SettableFuture.create<T>()
         scope.launch {
             runCatching { block() }
                 .onSuccess { settable.set(it) }
-                .onFailure { settable.setException(it) }
+                .onFailure {
+                    // Named, so a session command that fails can be told from one that never
+                    // answers — the second leaves nothing in the log at all.
+                    if (name.isNotEmpty()) Log.d(VOICE_TAG, "session: $name failed: $it")
+                    settable.setException(it)
+                }
         }
         return settable
     }

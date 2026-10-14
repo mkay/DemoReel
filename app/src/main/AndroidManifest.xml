@@ -105,8 +105,15 @@
             </intent-filter>
         </service>
 
+        <!--
+            singleTop, so an intent for an app that is already open reaches the running Activity's
+            onNewIntent. With the default mode, an intent matching the one that started the task —
+            a second "play … on Demo Reel", say, extras aside — only brings the task to the front,
+            and the request is dropped without the app ever seeing it.
+        -->
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:exported="true"
             tools:ignore="LockedOrientationActivity">
@@ -135,6 +142,18 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="audio/*" />
+            </intent-filter>
+
+            <!--
+                "Play … on Demo Reel", said to the assistant. The words go to the playback service
+                as a spoken request, which answers it with the library's own search; see
+                [de.singular.player.media.Library.playbackForSearch]. In the car the same request
+                reaches the service directly, and this filter is also what tells Android Auto the
+                app takes voice requests at all.
+            -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>
