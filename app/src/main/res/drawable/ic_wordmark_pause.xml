@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: CC-BY-4.0
+  Copyright (C) 2026 Kreuder <mk@singular.de>
+
+  The pause bars that take the play triangle's place in the disc's hub while a mix is playing, on
+  the disc's own 1495-unit canvas. Drawn as assets/pause.svg and centred here on the hub, so it
+  stacks with @drawable/ic_wordmark_reel at the same size, as @drawable/ic_wordmark_play does.
+
+  The glyph says what a tap on the disc will do, as the mini player's button does: pause while it
+  turns, play while it is still.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1495"
+    android:viewportHeight="1495">
+
+    <path
+        android:fillColor="#CAD5E2"
+        android:pathData="M701.434,665.753H724.316A5,5 0,0 1 729.316,670.753V823.446A5,5 0,0 1 724.316,828.446H701.434A5,5 0,0 1 696.434,823.446V670.753A5,5 0,0 1 701.434,665.753Z" />
+    <path
+        android:fillColor="#CAD5E2"
+        android:pathData="M770.688,665.753H793.57A5,5 0,0 1 798.57,670.753V823.446A5,5 0,0 1 793.57,828.446H770.688A5,5 0,0 1 765.688,823.446V670.753A5,5 0,0 1 770.688,665.753Z" />
+</vector>

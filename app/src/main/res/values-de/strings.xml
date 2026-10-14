@@ -189,7 +189,6 @@
     <string name="cd_more">Mehr</string>
     <string name="cd_play">Abspielen</string>
     <string name="cd_pause">Pause</string>
-    <string name="cd_stop">Stopp</string>
     <string name="cd_close_player">Player schließen</string>
     <string name="cd_back">Zurück</string>
     <string name="cd_apply_defaults">Vorgaben anwenden</string>
@@ -197,7 +196,6 @@
     <string name="cd_remove_cover">Cover entfernen</string>
     <string name="cd_paste_cover">Cover aus der Zwischenablage einfügen</string>
     <string name="cd_new_subfolder">Neuer Ordner</string>
-    <string name="cd_library_home">Zurück zum obersten Ordner</string>
     <string name="cd_favourite">Favorit</string>
     <string name="cd_not_favourite">Kein Favorit</string>
     <string name="cd_make_favourite">Als Favorit markieren</string>

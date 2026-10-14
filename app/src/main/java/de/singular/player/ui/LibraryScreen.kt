@@ -145,6 +145,8 @@ fun LibraryScreen(
     // the order the two compositions happen to register in.
     tab: LibraryTab,
     onTabChange: (LibraryTab) -> Unit,
+    /** Start or stop whatever the mini player holds — what the wordmark's disc does. */
+    onPlayPause: () -> Unit,
     /**
      * The search, hoisted for the same reason as [tab]: Back closes it, and it has to be able to
      * say so before the favourites tab or the folder tree claims the press. [searchOpen] is whether
@@ -195,18 +197,10 @@ fun LibraryScreen(
         ) {
             Wordmark(
                 spinning = playback.playing,
-                // Home is the top of the tree, which is only somewhere to go from a sub-folder or
-                // from the favourites. At the root of the files tab the mark is already showing
-                // where you are, and a tap that changes nothing is worse than one that does not
-                // offer itself.
-                onHome = if (tab != LibraryTab.ALL || state.path.size > 1) {
-                    {
-                        onTabChange(LibraryTab.ALL)
-                        onBreadcrumb(0)
-                    }
-                } else {
-                    null
-                },
+                // Only with something in the mini player to start or stop. With nothing loaded the
+                // disc is the mark and nothing more: a control that does nothing is worse than
+                // one that does not offer itself.
+                onPlayPause = onPlayPause.takeIf { playback.mix != null },
                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
             )
         }
@@ -435,20 +429,30 @@ fun LibraryScreen(
  *
  * Drawn in three layers rather than as one rotating image, because two parts of it must not turn.
  * The flat lockup is the ground, so the *word* stays level; a second copy of the disc turns over
- * it — same circle, same size, so it covers the still one exactly; and the play triangle from the
- * hub goes back on top, held still, because a record spins and a play button does not. A triangle
- * going round with the grooves would read as a loading spinner.
+ * it — same circle, same size, so it covers the still one exactly; and the glyph from the hub goes
+ * back on top, held still, because a record spins and a play button does not. A glyph going round
+ * with the grooves would read as a loading spinner.
  *
- * **It is Home when there is a home to go to.** Tapping it walks back to the root of the granted
- * folder, and off the favourites tab if that is where you were — the breadcrumb can do the same,
- * but only one crumb at a time and only once it is wide enough to hit.
+ * **The disc is the play/pause button for the mini player's mix.** A turning record invites the
+ * hand that stops it, and the disc already turns exactly while something plays, so the thing that
+ * shows the state is the thing that changes it. The hub glyph says what a tap will do, as the mini
+ * player's button does: pause bars while it turns, the triangle while it is still. Only the disc —
+ * the word is left alone, which keeps the target the size of what it means and makes a stray tap on
+ * the logo less likely to start the music.
+ *
+ * It used to be Home. That went: the breadcrumb's first crumb and the tab row reach the same places,
+ * and the disc had a better use.
  *
  * Decorative to a screen reader when it is only a mark; it takes a label once it is also a button,
  * because then it is a control and unlabelled controls are unreachable. The bar already names this
  * screen either way, and the wordmark says the same word again in a picture.
  */
 @Composable
-private fun Wordmark(spinning: Boolean, onHome: (() -> Unit)?, modifier: Modifier = Modifier) {
+private fun Wordmark(
+    spinning: Boolean,
+    onPlayPause: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     // An Animatable rather than an infinite transition, because the disc has to *stop* where it is
     // and carry on from there: a rotation that snapped back to zero on pause would read as the
     // player being reset. Each turn is animated on its own and the angle folded back under 360°, so
@@ -461,34 +465,36 @@ private fun Wordmark(spinning: Boolean, onHome: (() -> Unit)?, modifier: Modifie
         }
     }
 
-    val home = stringResource(R.string.cd_library_home)
-    Box(
-        modifier
-            .height(WordmarkHeight)
-            .then(
-                if (onHome == null) {
-                    Modifier
-                } else {
-                    Modifier.clickable(onClick = onHome).semantics { contentDescription = home }
-                },
-            ),
-    ) {
+    val action = stringResource(if (spinning) R.string.cd_pause else R.string.cd_play)
+    Box(modifier.height(WordmarkHeight)) {
         Image(
             painter = painterResource(R.drawable.ic_wordmark),
             contentDescription = null,
             modifier = Modifier.fillMaxHeight(),
         )
         val disc = Modifier.fillMaxHeight().aspectRatio(1f)
-        Image(
-            painter = painterResource(R.drawable.ic_wordmark_reel),
-            contentDescription = null,
-            modifier = disc.graphicsLayer { rotationZ = turn.value },
-        )
-        Image(
-            painter = painterResource(R.drawable.ic_wordmark_play),
-            contentDescription = null,
-            modifier = disc,
-        )
+        Box(
+            if (onPlayPause == null) {
+                disc
+            } else {
+                disc.clip(CircleShape)
+                    .clickable(onClick = onPlayPause)
+                    .semantics { contentDescription = action }
+            },
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_wordmark_reel),
+                contentDescription = null,
+                modifier = disc.graphicsLayer { rotationZ = turn.value },
+            )
+            Image(
+                painter = painterResource(
+                    if (spinning) R.drawable.ic_wordmark_pause else R.drawable.ic_wordmark_play,
+                ),
+                contentDescription = null,
+                modifier = disc,
+            )
+        }
     }
 }
 

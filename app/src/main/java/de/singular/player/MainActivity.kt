@@ -930,6 +930,7 @@ class MainActivity : AppCompatActivity() {
                                         onLoadFavourites = vm::loadFavourites,
                                         tab = libraryTab,
                                         onTabChange = { libraryTab = it },
+                                        onPlayPause = vm::toggleCurrent,
                                         searchOpen = searchOpen,
                                         query = searchQuery,
                                         searchResults = searchResults,

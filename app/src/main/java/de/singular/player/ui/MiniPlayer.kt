@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,17 +42,21 @@ import de.singular.player.R
  * The mix being listened to, wherever you happen to be.
  *
  * It sits at the foot of every screen, because playback outlives the screen it was started from:
- * without this, wandering off to Settings would leave a mix playing with nothing anywhere to stop
+ * without this, wandering off to Settings would leave a mix playing with nothing anywhere to pause
  * it.
  *
- * It shows while a mix is playing, and goes on showing one that was stopped part-way — that mix is
- * still the one in hand, and the bar is how it gets started again from where it stopped. What it
+ * It shows while a mix is playing, and goes on showing one that was paused part-way — that mix is
+ * still the one in hand, and the bar is how it gets started again from where it was paused. What it
  * does not do is outlive a mix that ran out on its own: reaching the end leaves it loaded at 0:00,
  * which would otherwise leave the bar sitting there reporting silence about something already
  * finished with.
  *
- * So stop and close stay two different things: stop silences the mix and keeps it, close puts it
+ * So pause and close stay two different things: pause silences the mix and keeps it, close puts it
  * away.
+ *
+ * The transport shows pause bars while playing, not a stop square, because pausing is what it does —
+ * the mix and its position are kept. The full player, the playing row's cover and the library's disc
+ * show the same two glyphs for the same action.
  *
  * The cover appears here as it does in the list, at the same size, and for the same reason — it is
  * the fastest way to say *which* mix without reading. It is not a control here, unlike in the list:
@@ -116,14 +120,14 @@ fun MiniPlayer(
                 Spacer(Modifier.width(8.dp))
                 IconButton(onClick = onToggle) {
                     Icon(
-                        if (playback.playing) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        if (playback.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = stringResource(
-                            if (playback.playing) R.string.cd_stop else R.string.cd_play,
+                            if (playback.playing) R.string.cd_pause else R.string.cd_play,
                         ),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
-                // Stop only silences the mix; this is how it stops taking up the screen. Dimmed,
+                // Pause only silences the mix; this is how it stops taking up the screen. Dimmed,
                 // because it is the least likely of the two to be wanted and reads at the same
                 // weight as the transport beside it otherwise — a cross at full strength pulls
                 // harder than a filled triangle does.
