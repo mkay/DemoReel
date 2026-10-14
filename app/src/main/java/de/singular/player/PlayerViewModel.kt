@@ -50,13 +50,13 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
- * A favourite, with the key it is marked under.
+ * A mix with its key — the path under the root that favourites are kept against.
  *
- * The key doubles as the mix's whereabouts: it is a path under the root, so its parent is the folder
- * to show beside the name — the whole point of that list being that the mixes in it come from all
- * over the tree and the name alone does not say where from.
+ * The key doubles as the mix's whereabouts, so its parent is the folder to show beside the name.
+ * That is the point of the two flat lists that carry these, the favourites and the search results:
+ * their mixes come from all over the tree, and the name alone does not say where from.
  */
-data class FavouriteMix(val mix: Mix, val key: String) {
+data class KeyedMix(val mix: Mix, val key: String) {
     /** The folder this sits in, or null at the root, where there is nothing useful to say. */
     val folder: String? get() = key.substringBeforeLast('/', "").takeIf { it.isNotEmpty() }
 }
@@ -253,8 +253,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * The favourites, resolved, for the Favourites tab. Null until they have been looked up once —
      * which is what tells the screen to say "loading" rather than "nothing marked yet".
      */
-    private val _favouriteMixes = MutableStateFlow<List<FavouriteMix>?>(null)
-    val favouriteMixes: StateFlow<List<FavouriteMix>?> = _favouriteMixes.asStateFlow()
+    private val _favouriteMixes = MutableStateFlow<List<KeyedMix>?>(null)
+    val favouriteMixes: StateFlow<List<KeyedMix>?> = _favouriteMixes.asStateFlow()
 
     private var favouritesJob: Job? = null
 
@@ -269,10 +269,80 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         favouritesJob?.cancel()
         favouritesJob = viewModelScope.launch {
             val keys = _favourites.value.sorted()
-            val found = keys.mapNotNull { key -> store.mixAt(key)?.let { FavouriteMix(it, key) } }
+            val found = keys.mapNotNull { key -> store.mixAt(key)?.let { KeyedMix(it, key) } }
             val gone = keys.toSet() - found.map { it.key }.toSet()
             if (gone.isNotEmpty()) _favourites.value = favouriteStore.removeAll(gone)
             _favouriteMixes.value = found.sortedByDescending { it.mix.modifiedAt }
+        }
+    }
+
+    // ---- search ---------------------------------------------------------------------------
+
+    /** What is typed in the library's search field — see [MixQuery]. Empty when it is closed. */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /**
+     * The mixes the query finds in the folder on screen and every folder under it, newest first.
+     *
+     * Null while there is no query, and also until the first pass of the first search for one
+     * returns — the same "not yet looked" the favourites use. Typing on does not null it again: the
+     * previous answer stays on screen until the next arrives, rather than the list blanking at every
+     * keystroke.
+     */
+    private val _searchResults = MutableStateFlow<List<KeyedMix>?>(null)
+    val searchResults: StateFlow<List<KeyedMix>?> = _searchResults.asStateFlow()
+
+    /**
+     * Whether a search is still opening files, so [searchResults] may yet grow — see
+     * [MixStore.search]. Until it is false, an empty answer is "nothing yet", not "nothing".
+     */
+    private val _searching = MutableStateFlow(false)
+    val searching: StateFlow<Boolean> = _searching.asStateFlow()
+
+    private var searchJob: Job? = null
+
+    fun setSearchQuery(text: String) {
+        if (text == _searchQuery.value) return
+        _searchQuery.value = text
+        runSearch(settle = true)
+    }
+
+    /**
+     * Search for the current query, replacing any search still running.
+     *
+     * Walked afresh each time rather than from an index of the tree. The walk is one provider query
+     * per folder, and the files that have to be opened for their tags are opened once and then
+     * remembered by the store (see [MixStore.search]) — and an index of the tree would be one more
+     * thing that has to hear about every rename, move and delete, inside the app and out of it.
+     * [refresh] re-runs it, so a change made through the app shows in the results as it would in the
+     * folder.
+     *
+     * [settle] holds the search back while typing is still going on.
+     */
+    private fun runSearch(settle: Boolean) {
+        searchJob?.cancel()
+        val query = MixQuery.of(_searchQuery.value)
+        val folder = _library.value.current
+        if (query == null || folder == null) {
+            _searchResults.value = null
+            _searching.value = false
+            return
+        }
+        searchJob = viewModelScope.launch {
+            if (settle) delay(SEARCH_SETTLE_MS)
+            _searching.value = true
+            try {
+                store.search(folder.uri, query::matches).collect { found ->
+                    _searchResults.value = found.mapNotNull { mix ->
+                        favouriteKey(mix.uri)?.let { KeyedMix(mix, it) }
+                    }
+                }
+            } finally {
+                // Only the search that is still the current one gets to say searching is over; one
+                // cancelled by the next keystroke would otherwise clear the flag its successor set.
+                if (searchJob == coroutineContext[Job]) _searching.value = false
+            }
         }
     }
 
@@ -540,6 +610,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 loading = false,
                 rootMissing = rootGone,
             )
+            // The search covers this folder and what is under it, so it follows both a move to
+            // another folder and any change that sent the library back to the provider.
+            if (_searchQuery.value.isNotEmpty()) runSearch(settle = false)
         }
     }
 
@@ -1602,6 +1675,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
          * settled by the time you look back at the list.
          */
         const val REORDER_DELAY_MS = 1_200L
+
+        /** How long typing has to pause before the tree is searched for what has been typed. */
+        const val SEARCH_SETTLE_MS = 200L
 
         /**
          * How often the playhead is read back off the system player. Ten times a second: fast enough

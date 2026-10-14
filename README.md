@@ -29,6 +29,8 @@ batch: move or delete several at once.
 newest first, each row saying which folder it came from. Optionally they also float to the top of
 their own folder.
 
+**Search.** Pull the library down past its top and a search field comes out. Every word typed has to appear, in any order and ignoring case and accents, in a mix's file name, the folders above it, or its tags — title, artist, album, album artist, genre, year. It covers the folder on screen and every folder under it, so going up the breadcrumb widens it; on the favourites tab it narrows the favourites. The first search over a big tree reads the tags of every file it cannot match by path, and shows what it has found while it does; later ones find most of them remembered.
+
 **Player.** The cover, what the file says about itself, and a zoomable waveform. Tap to seek, drag
 to scrub, pinch to zoom, and a strip along the bottom to scroll a long mix in one movement. The
 transport is one button; hold it for repeat, double-tap it to start again from the top.

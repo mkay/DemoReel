@@ -20,6 +20,11 @@
         and only that folder will appear here.</string>
     <string name="library_empty">Nothing in this folder.</string>
     <string name="favourites_empty">Nothing marked yet. Tap the star on a mix to keep it here.</string>
+    <!-- The library search, brought out by pulling the list down. It looks in the folder on
+         screen and every folder under it, at file and folder names and at the tags. -->
+    <string name="search_hint">Search names and tags</string>
+    <string name="search_no_match">No mixes match.</string>
+    <string name="cd_close_search">Close search</string>
     <string name="player_title_unsaved">Shared file (unsaved)</string>
     <string name="player_on_loan">This mix was shared from another app. Add it to your library to edit it.</string>
     <string name="player_no_waveform">This device cannot decode this file, so there is nothing to

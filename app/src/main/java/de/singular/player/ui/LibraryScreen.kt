@@ -4,9 +4,14 @@ package de.singular.player.ui
 
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,10 +33,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
@@ -40,6 +50,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -61,23 +72,36 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import de.singular.player.FavouriteMix
+import de.singular.player.KeyedMix
 import de.singular.player.LibraryState
 import de.singular.player.PlaybackState
 import de.singular.player.R
@@ -114,13 +138,27 @@ fun LibraryScreen(
     favouriteKeys: Set<String>,
     favouriteKeyOf: (Uri) -> String?,
     onToggleFavourite: (Mix) -> Unit,
-    favourites: List<FavouriteMix>?,
+    favourites: List<KeyedMix>?,
     onLoadFavourites: () -> Unit,
     // Hoisted, because back has to be able to leave the favourites tab, and the whole back chain
     // lives with the screen state a level up. Handling it here would leave which handler wins to
     // the order the two compositions happen to register in.
     tab: LibraryTab,
     onTabChange: (LibraryTab) -> Unit,
+    /**
+     * The search, hoisted for the same reason as [tab]: Back closes it, and it has to be able to
+     * say so before the favourites tab or the folder tree claims the press. [searchOpen] is whether
+     * the field is out; [query] is what is in it. On the favourites tab [favourites] arrive already
+     * narrowed by the query, and on the files tab [searchResults] replace the folder, with
+     * [searchLoading] while files are still being opened for their tags.
+     */
+    searchOpen: Boolean,
+    query: String,
+    searchResults: List<KeyedMix>?,
+    searchLoading: Boolean,
+    onOpenSearch: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onCloseSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val selecting = selection.isNotEmpty()
@@ -134,27 +172,44 @@ fun LibraryScreen(
     var deleting by rememberSaveable { mutableStateOf<String?>(null) }
     var deletingName by rememberSaveable { mutableStateOf("") }
 
+    // Out of the way while picking, like the tabs: a batch belongs to the folder it was made in.
+    val searching = searchOpen && !selecting
+    // Whether the search field holds the keyboard — what a drag of the results takes away again.
+    var fieldFocused by remember { mutableStateOf(false) }
+    val dismissKeyboard = rememberDismissKeyboardOnDrag { fieldFocused }
+
     Column(modifier.fillMaxSize()) {
         // The lockup heads the whole screen rather than the listing, so it stays put when the tabs
         // are switched — a mark that moved or vanished on the way to the favourites would read as
         // part of the list rather than as the top of the app.
-        Wordmark(
-            spinning = playback.playing,
-            // Home is the top of the tree, which is only somewhere to go from a sub-folder or from
-            // the favourites. At the root of the files tab the mark is already showing where you
-            // are, and a tap that changes nothing is worse than one that does not offer itself.
-            onHome = if (tab != LibraryTab.ALL || state.path.size > 1) {
-                {
-                    onTabChange(LibraryTab.ALL)
-                    onBreadcrumb(0)
-                }
-            } else {
-                null
-            },
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = 8.dp, bottom = 4.dp),
-        )
+        //
+        // Except while searching. With the keyboard up, the mark, the tabs and the folder path
+        // together left the results under half of what was left of the screen, and the mark is
+        // the one of the three that says nothing about the search. It folds away rather than
+        // vanishing, so the list does not jump by its height in one frame.
+        AnimatedVisibility(
+            visible = !searching,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Wordmark(
+                spinning = playback.playing,
+                // Home is the top of the tree, which is only somewhere to go from a sub-folder or
+                // from the favourites. At the root of the files tab the mark is already showing
+                // where you are, and a tap that changes nothing is worse than one that does not
+                // offer itself.
+                onHome = if (tab != LibraryTab.ALL || state.path.size > 1) {
+                    {
+                        onTabChange(LibraryTab.ALL)
+                        onBreadcrumb(0)
+                    }
+                } else {
+                    null
+                },
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+        }
 
         // Hidden while picking: the contextual bar has taken the top of the screen, and switching
         // tabs mid-batch would abandon a selection that only means anything in the folder it was
@@ -171,26 +226,44 @@ fun LibraryScreen(
             }
         }
 
+        // The field is drawn where the pull opened its gap, directly above the list, so it arrives
+        // where the finger left it — under the folder path on the files tab, not over it.
+        val searchHint: @Composable () -> Unit = {
+            Icon(Icons.Default.Search, contentDescription = null)
+        }
+        val matching = searching && query.isNotBlank()
+
         if (tab == LibraryTab.FAVOURITES) {
-            FavouritesList(
-                mixes = favourites,
-                playback = playback,
-                onPlay = onPlay,
-                onOpen = onOpen,
-                onToggleFavourite = onToggleFavourite,
-                onRename = { mix ->
-                    renaming = mix.uri.toString()
-                    renamingName = mix.baseName
-                },
-                onDelete = { mix ->
-                    deleting = mix.uri.toString()
-                    deletingName = mix.name
-                },
-                onShare = onShare,
-                onMove = { mix -> onMove(listOf(mix.uri)) },
-                onEditTags = onEditTags,
-                modifier = Modifier.weight(1f),
-            )
+            if (searching) SearchField(query, onQueryChange, onCloseSearch) { fieldFocused = it }
+            PullToReveal(
+                enabled = !searchOpen && !selecting,
+                onReveal = onOpenSearch,
+                hint = searchHint,
+                modifier = Modifier.weight(1f).nestedScroll(dismissKeyboard),
+            ) {
+                FlatMixList(
+                    mixes = favourites,
+                    empty = stringResource(
+                        if (matching) R.string.search_no_match else R.string.favourites_empty,
+                    ),
+                    playback = playback,
+                    onPlay = onPlay,
+                    onOpen = onOpen,
+                    onToggleFavourite = onToggleFavourite,
+                    onRename = { mix ->
+                        renaming = mix.uri.toString()
+                        renamingName = mix.baseName
+                    },
+                    onDelete = { mix ->
+                        deleting = mix.uri.toString()
+                        deletingName = mix.name
+                    },
+                    onShare = onShare,
+                    onMove = { mix -> onMove(listOf(mix.uri)) },
+                    onEditTags = onEditTags,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             return@Column
         }
 
@@ -210,66 +283,99 @@ fun LibraryScreen(
         HorizontalDivider()
 
         val listing = state.listing
-        when {
-            state.current == null ->
-                Hint(
-                    stringResource(R.string.library_no_folder),
-                    Modifier.weight(1f),
-                    action = stringResource(R.string.action_choose_folder),
-                    onAction = onChooseFolder,
+        if (searching) SearchField(query, onQueryChange, onCloseSearch) { fieldFocused = it }
+        PullToReveal(
+            // Nothing to search before a folder has been granted.
+            enabled = !searchOpen && !selecting && state.current != null,
+            onReveal = onOpenSearch,
+            hint = searchHint,
+            modifier = Modifier.weight(1f).nestedScroll(dismissKeyboard),
+        ) {
+            when {
+                state.current == null ->
+                    Hint(
+                        stringResource(R.string.library_no_folder),
+                        action = stringResource(R.string.action_choose_folder),
+                        onAction = onChooseFolder,
+                    )
+
+                // The breadcrumb above stays, and says where the search starts: this folder and
+                // everything under it. Moving up the crumbs widens it.
+                matching -> FlatMixList(
+                    mixes = searchResults,
+                    empty = stringResource(R.string.search_no_match),
+                    playback = playback,
+                    onPlay = onPlay,
+                    onOpen = onOpen,
+                    onToggleFavourite = onToggleFavourite,
+                    onRename = { mix ->
+                        renaming = mix.uri.toString()
+                        renamingName = mix.baseName
+                    },
+                    onDelete = { mix ->
+                        deleting = mix.uri.toString()
+                        deletingName = mix.name
+                    },
+                    onShare = onShare,
+                    onMove = { mix -> onMove(listOf(mix.uri)) },
+                    onEditTags = onEditTags,
+                    favouriteKeys = favouriteKeys,
+                    loading = searchLoading,
+                    modifier = Modifier.fillMaxSize(),
                 )
 
-            listing?.error != null -> Hint(stringResource(listing.error.message), Modifier.weight(1f))
-            listing != null && listing.folders.isEmpty() && listing.mixes.isEmpty() ->
-                Hint(stringResource(R.string.library_empty), Modifier.weight(1f))
+                listing?.error != null -> Hint(stringResource(listing.error.message))
+                listing != null && listing.folders.isEmpty() && listing.mixes.isEmpty() ->
+                    Hint(stringResource(R.string.library_empty))
 
-            listing != null -> LazyColumn(Modifier.weight(1f)) {
-                itemsIndexed(listing.folders, key = { _, it -> it.uri.toString() }) { i, folder ->
-                    if (i > 0) RowDivider()
-                    FolderRow(
-                        folder = folder,
-                        selected = folder.uri.toString() in selection,
-                        selecting = selecting,
-                        onOpen = { onOpenFolder(folder) },
-                        onToggleSelect = { onToggleSelect(folder.uri.toString()) },
-                        onRename = {
-                            renaming = folder.uri.toString()
-                            renamingName = folder.name
-                        },
-                        onDelete = {
-                            deleting = folder.uri.toString()
-                            deletingName = folder.name
-                        },
-                    )
+                listing != null -> LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(listing.folders, key = { _, it -> it.uri.toString() }) { i, folder ->
+                        if (i > 0) RowDivider()
+                        FolderRow(
+                            folder = folder,
+                            selected = folder.uri.toString() in selection,
+                            selecting = selecting,
+                            onOpen = { onOpenFolder(folder) },
+                            onToggleSelect = { onToggleSelect(folder.uri.toString()) },
+                            onRename = {
+                                renaming = folder.uri.toString()
+                                renamingName = folder.name
+                            },
+                            onDelete = {
+                                deleting = folder.uri.toString()
+                                deletingName = folder.name
+                            },
+                        )
+                    }
+                    itemsIndexed(listing.mixes, key = { _, it -> it.uri.toString() }) { i, mix ->
+                        if (i > 0 || listing.folders.isNotEmpty()) RowDivider()
+                        MixRow(
+                            mix = mix,
+                            playing = playback.uri == mix.uri && playback.playing,
+                            selected = mix.uri.toString() in selection,
+                            selecting = selecting,
+                            favourite = favouriteKeyOf(mix.uri) in favouriteKeys,
+                            onToggleFavourite = { onToggleFavourite(mix) },
+                            onPlay = { onPlay(mix) },
+                            onOpen = { onOpen(mix) },
+                            onToggleSelect = { onToggleSelect(mix.uri.toString()) },
+                            onRename = {
+                                renaming = mix.uri.toString()
+                                renamingName = mix.baseName
+                            },
+                            onDelete = {
+                                deleting = mix.uri.toString()
+                                deletingName = mix.name
+                            },
+                            onShare = { onShare(mix) },
+                            onMove = { onMove(listOf(mix.uri)) },
+                            onEditTags = { onEditTags(mix) },
+                        )
+                    }
                 }
-                itemsIndexed(listing.mixes, key = { _, it -> it.uri.toString() }) { i, mix ->
-                    if (i > 0 || listing.folders.isNotEmpty()) RowDivider()
-                    MixRow(
-                        mix = mix,
-                        playing = playback.uri == mix.uri && playback.playing,
-                        selected = mix.uri.toString() in selection,
-                        selecting = selecting,
-                        favourite = favouriteKeyOf(mix.uri) in favouriteKeys,
-                        onToggleFavourite = { onToggleFavourite(mix) },
-                        onPlay = { onPlay(mix) },
-                        onOpen = { onOpen(mix) },
-                        onToggleSelect = { onToggleSelect(mix.uri.toString()) },
-                        onRename = {
-                            renaming = mix.uri.toString()
-                            renamingName = mix.baseName
-                        },
-                        onDelete = {
-                            deleting = mix.uri.toString()
-                            deletingName = mix.name
-                        },
-                        onShare = { onShare(mix) },
-                        onMove = { onMove(listOf(mix.uri)) },
-                        onEditTags = { onEditTags(mix) },
-                    )
-                }
+
+                else -> Spacer(Modifier.fillMaxSize())
             }
-
-            else -> Spacer(Modifier.weight(1f))
         }
     }
 
@@ -383,6 +489,120 @@ private fun Wordmark(spinning: Boolean, onHome: (() -> Unit)?, modifier: Modifie
             contentDescription = null,
             modifier = disc,
         )
+    }
+}
+
+/**
+ * The search box, once a pull has brought it out. It takes the keyboard on arrival — the pull was
+ * the request to type — and its close button empties it and puts it away in one, as Back does.
+ *
+ * A filled pill rather than Material's outlined field. The outline is drawn in the accent while
+ * focused, and since this field is focused for its whole life that was an accent frame round the
+ * top of the list for as long as a search was open — the loudest thing on the screen, saying only
+ * that there was a box. A step off the page says the same thing quietly, and the accent is left to
+ * the cursor, which is the one part of the field that is news. Built on [BasicTextField] because
+ * the Material fields will not go below 56dp, and this sits between the folder path and the rows.
+ *
+ * Round rather than the [ControlShape] corners the buttons use, on purpose: a search field is the
+ * one control here whose shape is recognised before its contents are read.
+ */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+) {
+    val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val colors = MaterialTheme.colorScheme
+    val text = MaterialTheme.typography.bodyLarge
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+            .height(44.dp)
+            .clip(CircleShape)
+            .background(colors.surfaceContainerHigh)
+            .padding(start = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Default.Search,
+            contentDescription = null,
+            tint = colors.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f).focusRequester(focus)
+                .onFocusChanged { onFocusChange(it.isFocused) },
+            singleLine = true,
+            textStyle = text.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.primary),
+            // Results arrive as the words are typed, so the action key has nothing left to do but
+            // get the keyboard off the list — the same as dragging the list does, see
+            // [rememberDismissKeyboardOnDrag]. Focus goes with it, so the field is not left with a
+            // cursor blinking in it and no keyboard to type with.
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+            decorationBox = { field ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) {
+                        Text(
+                            stringResource(R.string.search_hint),
+                            style = text,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    field()
+                }
+            },
+        )
+        IconButton(onClick = onClose) {
+            Icon(
+                Icons.Default.Close,
+                stringResource(R.string.cd_close_search),
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Put the keyboard away when the list under the search field is dragged.
+ *
+ * Not every keyboard has a key that hides it, and one that has none leaves the results a strip
+ * between the field and the keys for as long as the search is open. A button in the field to do the
+ * keyboard's job would sit beside the close button and look like a second way of closing. Dragging
+ * the list is what someone who wants to see more of it does anyway, so that is what hides it — the
+ * way the platform's own search screens behave. Tapping the field brings the keyboard back, with
+ * the words still in it.
+ *
+ * Only a drag counts, not a fling's tail or a list scrolled from code, and only while the field
+ * [hasKeyboard]; otherwise this passes every scroll through untouched.
+ */
+@Composable
+private fun rememberDismissKeyboardOnDrag(hasKeyboard: () -> Boolean): NestedScrollConnection {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val holding by rememberUpdatedState(hasKeyboard)
+    return remember(focusManager, keyboard) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f && holding()) {
+                    // Clearing focus is what hides the keyboard of a Compose text field; the
+                    // explicit hide covers a keyboard that does not take the hint.
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                }
+                return Offset.Zero
+            }
+        }
     }
 }
 

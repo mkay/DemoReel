@@ -176,6 +176,9 @@ class MainActivity : AppCompatActivity() {
                     val looping by vm.looping.collectAsStateWithLifecycle()
                     val favourites by vm.favourites.collectAsStateWithLifecycle()
                     val favouriteMixes by vm.favouriteMixes.collectAsStateWithLifecycle()
+                    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+                    val searchResults by vm.searchResults.collectAsStateWithLifecycle()
+                    val searchLoading by vm.searching.collectAsStateWithLifecycle()
                     val movePicker by vm.movePicker.collectAsStateWithLifecycle()
                     // The uri of the open mix when it came from another app — what turns on
                     // the offer to keep it. See [PlayerViewModel.handedOver].
@@ -424,6 +427,21 @@ class MainActivity : AppCompatActivity() {
                     val onFavouritesTab =
                         screen == Screen.LIBRARY && libraryTab == LibraryTab.FAVOURITES
 
+                    // The library's search field, brought out by pulling the list down. The query
+                    // itself lives in the view model, which walks the tree for it; what is filtered
+                    // here is the favourites list, which is already in memory, tags and all, and
+                    // narrows instantly.
+                    var searchOpen by rememberSaveable { mutableStateOf(false) }
+                    val searching = screen == Screen.LIBRARY && searchOpen
+                    fun closeSearch() {
+                        searchOpen = false
+                        vm.setSearchQuery("")
+                    }
+                    val favouritesShown = remember(favouriteMixes, searchQuery) {
+                        val query = MixQuery.of(searchQuery) ?: return@remember favouriteMixes
+                        favouriteMixes?.filter { query.matches(it.key, it.mix.tags) }
+                    }
+
                     // Deleting a batch is the one thing this mode exists for, and the one thing in
                     // the app that cannot be undone — so it says how many and what kind before it
                     // goes.
@@ -522,7 +540,8 @@ class MainActivity : AppCompatActivity() {
                     //
                     // Drop the selection first: while picking, that is what the gesture is for, and
                     // walking up a folder mid-batch is never what was meant. Then out of the player,
-                    // then off the favourites tab, then up the folder tree, then home.
+                    // then the search, then off the favourites tab, then up the folder tree, then
+                    // home.
                     BackHandler(enabled = selecting) { selection = emptySet() }
                     // Before the player's, because the editor can be open *over* the player and is
                     // the only handler here that may refuse to act — see [askLeaveEditor].
@@ -532,12 +551,15 @@ class MainActivity : AppCompatActivity() {
                     ) { leavePlayer() }
                     // Favourites is a tab, not a place: leaving it returns to the files beside it,
                     // the same way leaving a sub-folder goes up rather than out.
-                    BackHandler(enabled = !selecting && onFavouritesTab) {
+                    // An open search goes before either: the field is the thing most recently
+                    // brought out, and the list under it is still the place you were.
+                    BackHandler(enabled = !selecting && searching) { closeSearch() }
+                    BackHandler(enabled = !selecting && !searching && onFavouritesTab) {
                         libraryTab = LibraryTab.ALL
                     }
                     BackHandler(
-                        enabled = !selecting && !onFavouritesTab && screen == Screen.LIBRARY &&
-                            library.canGoUp,
+                        enabled = !selecting && !searching && !onFavouritesTab &&
+                            screen == Screen.LIBRARY && library.canGoUp,
                     ) { vm.goUp() }
                     BackHandler(
                         enabled = !selecting && screen == Screen.SETTINGS,
@@ -881,10 +903,17 @@ class MainActivity : AppCompatActivity() {
                                         favouriteKeys = favourites,
                                         favouriteKeyOf = vm::favouriteKey,
                                         onToggleFavourite = { vm.toggleFavourite(it.uri) },
-                                        favourites = favouriteMixes,
+                                        favourites = favouritesShown,
                                         onLoadFavourites = vm::loadFavourites,
                                         tab = libraryTab,
                                         onTabChange = { libraryTab = it },
+                                        searchOpen = searchOpen,
+                                        query = searchQuery,
+                                        searchResults = searchResults,
+                                        searchLoading = searchLoading,
+                                        onOpenSearch = { searchOpen = true },
+                                        onQueryChange = vm::setSearchQuery,
+                                        onCloseSearch = ::closeSearch,
                                         selection = selection,
                                         onToggleSelect = { uri ->
                                             selection = if (uri in selection) {

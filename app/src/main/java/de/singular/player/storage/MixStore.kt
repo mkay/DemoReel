@@ -23,6 +23,9 @@ import de.singular.player.audio.Waveform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -112,8 +115,16 @@ class MixStore(context: Context) {
      * Reading tags means a [android.media.MediaMetadataRetriever] open per file, which is cheap on
      * its own and adds up over a folder of thirty. Size and mtime together catch every rewrite: a
      * file whose tags changed changed length or changed time, and usually both.
+     *
+     * Sized for a whole tree rather than a folder, because [search] reads every mix it cannot match
+     * by path, and what one search reads is what makes the next one instant. Least recently used goes
+     * first when it is full, so the folders being worked in stay. Locked, because a search walking
+     * the tree and a folder listing can both be filling it at once.
      */
-    private val tagCache = HashMap<String, Tags>()
+    private val tagCache = object : LinkedHashMap<String, Tags>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Tags>) =
+            size > CACHE_LIMIT
+    }
 
     /** The granted root, or null until the user has picked one. */
     val root: Uri?
@@ -148,7 +159,7 @@ class MixStore(context: Context) {
             prefs.edit().putString(KEY_ROOT, uri.toString()).apply()
             // A different root is a different set of files; the old folder's tags are not wrong,
             // but keeping them costs memory for rows that will never be drawn again.
-            tagCache.clear()
+            synchronized(tagCache) { tagCache.clear() }
         }
         return ok
     }
@@ -162,38 +173,17 @@ class MixStore(context: Context) {
     /** Everything in [folder]: sub-folders first, then mixes, newest first. */
     suspend fun list(folder: Uri): Listing = withContext(Dispatchers.IO) {
         val tree = root ?: return@withContext Listing(folder, error = StorageFailure.NO_FOLDER_CHOSEN)
-        val children = runCatching {
-            DocumentsContract.buildChildDocumentsUriUsingTree(
-                tree, DocumentsContract.getDocumentId(folder),
-            )
-        }.getOrNull() ?: return@withContext Listing(folder, error = StorageFailure.FOLDER_UNREACHABLE)
-
+        val rows = children(tree, folder).getOrElse {
+            val failure = (it as? StorageException)?.failure ?: StorageFailure.FOLDER_UNREADABLE
+            return@withContext Listing(folder, error = failure)
+        }
         val folders = ArrayList<Folder>()
         val mixes = ArrayList<Mix>()
-        val columns = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_SIZE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-        )
-        val cursor = runCatching { resolver.query(children, columns, null, null, null) }.getOrNull()
-            ?: return@withContext Listing(folder, error = StorageFailure.FOLDER_UNREADABLE)
-
-        cursor.use {
-            while (it.moveToNext()) {
-                val id = it.getString(0) ?: continue
-                val name = it.getString(1) ?: continue
-                if (isHidden(name)) continue
-                val mime = it.getString(2) ?: ""
-                val size = if (it.isNull(3)) 0L else it.getLong(3)
-                val modified = if (it.isNull(4)) 0L else it.getLong(4)
-                val uri = documentUri(tree, id)
-                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    folders += Folder(uri, name, modified)
-                } else if (isAudio(name, mime)) {
-                    mixes += Mix(uri, name, size, modified, tags(uri, size, modified))
-                }
+        rows.forEach { row ->
+            if (row.isFolder) {
+                folders += Folder(row.uri, row.name, row.modified)
+            } else if (row.isAudio) {
+                mixes += row.toMix()
             }
         }
         Listing(
@@ -235,6 +225,117 @@ class MixStore(context: Context) {
         val pending = ArrayDeque<Uri>()
         pending += start
         var folders = 0
+        while (pending.isNotEmpty() && folders < FOLDER_WALK_LIMIT && found.size < MIX_WALK_LIMIT) {
+            // A walk of a large tree is exactly the kind of thing someone backs out of.
+            currentCoroutineContext().ensureActive()
+            folders++
+            children(tree, pending.removeFirst()).getOrNull()?.forEach { row ->
+                if (row.isFolder) {
+                    pending += row.uri
+                } else if (row.isAudio) {
+                    found += Mix(row.uri, row.name, row.size, row.modified, Tags())
+                }
+            }
+        }
+        found
+    }
+
+    /**
+     * Every mix in [folder] or any folder beneath it that [matches] accepts, newest first — as a
+     * flow of the answer so far, complete when the flow is.
+     *
+     * ## Two passes, because a mix is found by its tags as well as its path
+     *
+     * The walk is one provider query per folder, and the names and keys come with it, so the walk
+     * itself is cheap. Tags are not: they are a file open each. So the first pass asks [matches]
+     * with the key alone (tags null) and, where this store already has a file's tags, with those too
+     * — and says what that found before opening anything. Only the mixes it could not decide are
+     * then opened, in the second pass, and the answer grows as they turn up.
+     *
+     * The first search over a large tree is the slow one: every file not matched by its path has to
+     * be read once. What it reads goes into [tagCache], so the words typed after it, and the next
+     * search, start from the first pass with most of the tree already known. A search cancelled by
+     * the next keystroke has not wasted what it read.
+     *
+     * Bounded by the same limits as [allMixes]. A folder that will not list is skipped rather than
+     * failing the search: the rest of the tree still answers.
+     */
+    fun search(folder: Uri, matches: (key: String, tags: Tags?) -> Boolean): Flow<List<Mix>> = flow {
+        val tree = root ?: run {
+            emit(emptyList())
+            return@flow
+        }
+        val found = ArrayList<Mix>()
+        val unread = ArrayList<Pair<Child, String>>()
+        val pending = ArrayDeque(listOf(folder))
+        var folders = 0
+        var seen = 0
+        while (pending.isNotEmpty() && folders < FOLDER_WALK_LIMIT && seen < MIX_WALK_LIMIT) {
+            currentCoroutineContext().ensureActive()
+            folders++
+            children(tree, pending.removeFirst()).getOrNull()?.forEach { row ->
+                if (row.isFolder) {
+                    pending += row.uri
+                } else if (row.isAudio) {
+                    seen++
+                    val key = Favourites.keyFor(tree, row.uri) ?: return@forEach
+                    val known = cachedTags(row.uri, row.size, row.modified)
+                    when {
+                        matches(key, null) || (known != null && matches(key, known)) ->
+                            found += row.toMix()
+
+                        known == null -> unread += row to key
+                    }
+                }
+            }
+        }
+        emit(found.sortedByDescending { it.modifiedAt })
+
+        // Results are let out in batches rather than one emission per file: every emission redraws
+        // the list, and a list that re-sorts itself thirty times a second cannot be read.
+        var shownAt = System.nanoTime()
+        var news = false
+        unread.forEach { (row, key) ->
+            currentCoroutineContext().ensureActive()
+            val mix = row.toMix()
+            if (matches(key, mix.tags)) {
+                found += mix
+                news = true
+            }
+            if (news && System.nanoTime() - shownAt >= SEARCH_BATCH_NS) {
+                emit(found.sortedByDescending { it.modifiedAt })
+                shownAt = System.nanoTime()
+                news = false
+            }
+        }
+        if (news) emit(found.sortedByDescending { it.modifiedAt })
+    }.flowOn(Dispatchers.IO)
+
+    /** One entry in a folder, as the provider describes it, before anything is opened. */
+    private inner class Child(
+        val uri: Uri,
+        val name: String,
+        val mime: String,
+        val size: Long,
+        val modified: Long,
+    ) {
+        val isFolder get() = mime == DocumentsContract.Document.MIME_TYPE_DIR
+        val isAudio get() = !isFolder && this@MixStore.isAudio(name, mime)
+
+        /** The mix, tags and all — read from the file unless [tagCache] already has them. */
+        fun toMix() = Mix(uri, name, size, modified, tags(uri, size, modified))
+    }
+
+    /**
+     * What sits directly in [folder], dotfiles left out, or the [StorageFailure] that stopped it —
+     * the one query [list], [allMixes] and [search] all make of a folder.
+     */
+    private fun children(tree: Uri, folder: Uri): Result<List<Child>> {
+        val children = runCatching {
+            DocumentsContract.buildChildDocumentsUriUsingTree(
+                tree, DocumentsContract.getDocumentId(folder),
+            )
+        }.getOrNull() ?: return Result.failure(StorageException(StorageFailure.FOLDER_UNREACHABLE))
         val columns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -242,36 +343,24 @@ class MixStore(context: Context) {
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
-        while (pending.isNotEmpty() && folders < FOLDER_WALK_LIMIT && found.size < MIX_WALK_LIMIT) {
-            // A walk of a large tree is exactly the kind of thing someone backs out of.
-            currentCoroutineContext().ensureActive()
-            val folder = pending.removeFirst()
-            folders++
-            val children = runCatching {
-                DocumentsContract.buildChildDocumentsUriUsingTree(
-                    tree, DocumentsContract.getDocumentId(folder),
+        val cursor = runCatching { resolver.query(children, columns, null, null, null) }.getOrNull()
+            ?: return Result.failure(StorageException(StorageFailure.FOLDER_UNREADABLE))
+        val rows = ArrayList<Child>()
+        cursor.use {
+            while (it.moveToNext()) {
+                val id = it.getString(0) ?: continue
+                val name = it.getString(1) ?: continue
+                if (isHidden(name)) continue
+                rows += Child(
+                    uri = documentUri(tree, id),
+                    name = name,
+                    mime = it.getString(2) ?: "",
+                    size = if (it.isNull(3)) 0L else it.getLong(3),
+                    modified = if (it.isNull(4)) 0L else it.getLong(4),
                 )
-            }.getOrNull() ?: continue
-            val cursor = runCatching { resolver.query(children, columns, null, null, null) }
-                .getOrNull() ?: continue
-            cursor.use {
-                while (it.moveToNext()) {
-                    val id = it.getString(0) ?: continue
-                    val name = it.getString(1) ?: continue
-                    if (isHidden(name)) continue
-                    val mime = it.getString(2) ?: ""
-                    val size = if (it.isNull(3)) 0L else it.getLong(3)
-                    val modified = if (it.isNull(4)) 0L else it.getLong(4)
-                    val uri = documentUri(tree, id)
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        pending += uri
-                    } else if (isAudio(name, mime)) {
-                        found += Mix(uri, name, size, modified, Tags())
-                    }
-                }
             }
         }
-        found
+        return Result.success(rows)
     }
 
     /**
@@ -827,13 +916,18 @@ class MixStore(context: Context) {
 
     /** What [uri] says about itself, remembered against its size and mtime — see [tagCache]. */
     private fun tags(uri: Uri, size: Long, modified: Long): Tags {
-        val key = "$uri|$size|$modified"
-        tagCache[key]?.let { return it }
+        cachedTags(uri, size, modified)?.let { return it }
+        // Read outside the lock: it is a file open, and a listing should not wait on a search's.
         val read = Tags.read(appContext, uri) ?: Tags()
-        if (tagCache.size > CACHE_LIMIT) tagCache.clear()
-        tagCache[key] = read
+        synchronized(tagCache) { tagCache[cacheKey(uri, size, modified)] = read }
         return read
     }
+
+    /** What [tagCache] already knows about [uri], without going to the file for it. */
+    private fun cachedTags(uri: Uri, size: Long, modified: Long): Tags? =
+        synchronized(tagCache) { tagCache[cacheKey(uri, size, modified)] }
+
+    private fun cacheKey(uri: Uri, size: Long, modified: Long) = "$uri|$size|$modified"
 
     /**
      * Forget what [uri] said, so the next read goes back to the file.
@@ -845,7 +939,7 @@ class MixStore(context: Context) {
      */
     fun forget(uri: Uri) {
         val prefix = "$uri|"
-        tagCache.keys.filter { it.startsWith(prefix) }.forEach(tagCache::remove)
+        synchronized(tagCache) { tagCache.keys.removeAll { it.startsWith(prefix) } }
     }
 
     /** Display name of any document, or null if it has gone. */
@@ -885,11 +979,22 @@ class MixStore(context: Context) {
         /** Only ever used as a fallback when a provider will not say what a file is. */
         const val MIME_AUDIO = "audio/mpeg"
 
-        const val CACHE_LIMIT = 512
+        /**
+         * How many files' tags [tagCache] keeps. A [Tags] is a handful of short strings, so this is
+         * a few megabytes at most — the price of a second search over a tree of a few thousand
+         * mixes not opening any of them again.
+         */
+        const val CACHE_LIMIT = 4_096
 
-        /** Ceilings for [allMixes], so a root pointed somewhere enormous fails rather than hangs. */
+        /**
+         * Ceilings for [allMixes] and [search], so a root pointed somewhere enormous fails rather
+         * than hangs.
+         */
         const val FOLDER_WALK_LIMIT = 2_000
         const val MIX_WALK_LIMIT = 10_000
+
+        /** How often a search still reading files shows what it has found so far. */
+        const val SEARCH_BATCH_NS = 300_000_000L
 
         /** Read/write block for the whole-file passes a re-tag makes. */
         const val BLOCK = 64 * 1024

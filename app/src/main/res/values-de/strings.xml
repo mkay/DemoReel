@@ -15,6 +15,9 @@
     <string name="library_empty">Dieser Ordner ist leer.</string>
     <string name="favourites_empty">Noch nichts markiert. Tippe den Stern eines Mixes an, um ihn hier
         zu behalten.</string>
+    <string name="search_hint">Namen und Tags durchsuchen</string>
+    <string name="search_no_match">Keine passenden Mixe.</string>
+    <string name="cd_close_search">Suche schließen</string>
     <string name="mini_player_unsaved">%1$s (nicht gespeichert)</string>
     <string name="player_title_unsaved">Geteilte Datei (nicht gespeichert)</string>
     <string name="player_on_loan">Dieser Mix wurde aus einer anderen App geteilt. Füge ihn zur Bibliothek hinzu, um ihn zu bearbeiten.</string>
