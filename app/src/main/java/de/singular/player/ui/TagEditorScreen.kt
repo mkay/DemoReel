@@ -194,7 +194,12 @@ fun TagEditorScreen(
             ) { v -> onEdit { it.copy(track = v) } }
         }
         Field(R.string.field_genre, edit.tags.genre) { v -> onEdit { it.copy(genre = v) } }
-        Field(R.string.field_comment, edit.tags.comment, lines = 3) { v ->
+        Field(
+            R.string.field_comment,
+            edit.tags.comment,
+            lines = 3,
+            capitalization = KeyboardCapitalization.Sentences,
+        ) { v ->
             onEdit { it.copy(comment = v) }
         }
 
@@ -297,6 +302,11 @@ private fun Field(
     modifier: Modifier = Modifier,
     numeric: Boolean = false,
     lines: Int = 1,
+    // Names, album titles and genres are capitalised word by word; the numeric fields not at all.
+    // The comment passes sentences: it is a note, and often a technical one ("bpm=110 gain=+11")
+    // that a capital on every word would mangle.
+    capitalization: KeyboardCapitalization =
+        if (numeric) KeyboardCapitalization.None else KeyboardCapitalization.Words,
     onChange: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -309,12 +319,7 @@ private fun Field(
         shape = ControlShape,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
-            // Names, album titles and genres are all capitalised; only the numeric fields are not.
-            capitalization = if (numeric) {
-                KeyboardCapitalization.None
-            } else {
-                KeyboardCapitalization.Words
-            },
+            capitalization = capitalization,
         ),
         modifier = modifier.fillMaxWidth().padding(bottom = 10.dp),
     )

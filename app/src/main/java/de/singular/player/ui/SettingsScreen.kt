@@ -218,7 +218,11 @@ private fun DefaultsSettings(
             onSetDefaults(defaults.copy(genre = it))
         }
     }
-    DefaultField(R.string.field_comment, defaults.comment) {
+    DefaultField(
+        R.string.field_comment,
+        defaults.comment,
+        capitalization = KeyboardCapitalization.Sentences,
+    ) {
         onSetDefaults(defaults.copy(comment = it))
     }
 
@@ -236,6 +240,9 @@ private fun DefaultField(
     value: String,
     modifier: Modifier = Modifier,
     numeric: Boolean = false,
+    // As in the tag editor's fields: words for names, sentences for the comment, none for numbers.
+    capitalization: KeyboardCapitalization =
+        if (numeric) KeyboardCapitalization.None else KeyboardCapitalization.Words,
     onChange: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -246,11 +253,7 @@ private fun DefaultField(
         shape = ControlShape,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
-            capitalization = if (numeric) {
-                KeyboardCapitalization.None
-            } else {
-                KeyboardCapitalization.Words
-            },
+            capitalization = capitalization,
         ),
         modifier = modifier.fillMaxWidth().padding(bottom = 10.dp),
     )
