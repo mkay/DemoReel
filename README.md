@@ -42,6 +42,8 @@ transport is one button; hold it for repeat, double-tap it to start again from t
 **Mini player.** The mix in hand, at the foot of every screen, so playback that outlives the screen
 it was started from can still be stopped.
 
+**From other apps.** A mix shared to Demo Reel, or opened with it from a file manager or a messenger, plays straight away from where it is. If it is worth keeping, pick a folder in the library and a copy goes there — the original stays with the app that sent it. Otherwise nothing of it stays behind.
+
 **Tag editor.** Title, artist, album, album artist, composer, year, track, genre, tempo, key, comment and cover art,
 written back into the file itself — **MP3** (ID3v2.4) and **FLAC** (Vorbis comment + `PICTURE`
 block). The audio is copied byte for byte and never decoded, so re-tagging a lossy file costs no
