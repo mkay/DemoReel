@@ -32,8 +32,44 @@ import java.io.OutputStream
  */
 object TagIo {
 
-    /** What a file carries: its fields, and its cover as the bytes the file itself holds. */
-    class Content(val tags: Tags, val cover: ByteArray?)
+    /**
+     * What a file carries: its fields, its cover as the bytes the file itself holds, and whatever
+     * else it carries that this app does not edit — null when nothing parsed the file closely
+     * enough to say.
+     */
+    class Content(val tags: Tags, val cover: ByteArray?, val kept: Kept? = null)
+
+    /**
+     * The tags in a file that the editor does not own, held so a rewrite can carry them through —
+     * tempo, key, composer and the rest. Each format has its own; see [Id3.Kept] and
+     * [FlacTags.Kept].
+     */
+    sealed interface Kept {
+        /** Without what was measured on the audio, for a copy whose audio is new. */
+        fun forNewAudio(): Kept
+
+        /** The part every format has a name for — see [Common]. */
+        fun common(): Common
+    }
+
+    /**
+     * What survives a change of format: the few fields beyond [Tags] that ID3 and Vorbis comments
+     * both have an agreed name for, and the full recording date. Everything else a format carries
+     * has no counterpart in the other, and a convert leaves it behind.
+     *
+     * | here       | ID3    | Vorbis comment |
+     * |------------|--------|----------------|
+     * | [bpm]      | `TBPM` | `BPM`          |
+     * | [key]      | `TKEY` | `INITIALKEY`   |
+     * | [composer] | `TCOM` | `COMPOSER`     |
+     * | [date]     | `TDRC` | `DATE`         |
+     */
+    data class Common(
+        val bpm: String = "",
+        val key: String = "",
+        val composer: String = "",
+        val date: String = "",
+    )
 
     /**
      * Everything [format] can tell us about the file behind [input], which must be positioned at
@@ -46,7 +82,7 @@ object TagIo {
      */
     fun read(format: TagFormat, input: InputStream): Content? = when (format) {
         TagFormat.MP3 -> readMp3(input)
-        TagFormat.FLAC -> FlacTags.readLayout(input)?.let { Content(it.tags, it.picture) }
+        TagFormat.FLAC -> FlacTags.readLayout(input)?.let { Content(it.tags, it.picture, it.kept) }
     }
 
     /**
@@ -56,6 +92,11 @@ object TagIo {
      * The audio is copied byte for byte and never decoded. Re-tagging a lossy file must not cost a
      * generation of quality, and re-tagging a lossless one must not cost an encode; only the
      * metadata in front of the audio changes.
+     *
+     * Everything else the file carries is kept — see [Kept]. [carry] null means the file's own,
+     * which is what an edit wants. A render passes the original's instead, because the file it is
+     * tagging is new and carries nothing of its own yet; one from another format brings what the
+     * two formats share ([Common]) and nothing else.
      *
      * Returns false if the input is not the format it claims to be, in which case [out] holds
      * whatever was written before that was discovered and the caller must throw it away rather than
@@ -67,9 +108,10 @@ object TagIo {
         out: OutputStream,
         tags: Tags,
         cover: Artwork?,
+        carry: Kept? = null,
     ): Boolean = when (format) {
-        TagFormat.MP3 -> writeMp3(input, out, tags, cover)
-        TagFormat.FLAC -> writeFlac(input, out, tags, cover)
+        TagFormat.MP3 -> writeMp3(input, out, tags, cover, carry)
+        TagFormat.FLAC -> writeFlac(input, out, tags, cover, carry)
     }
 
     // ---- mp3 ----------------------------------------------------------------------------------
@@ -88,7 +130,7 @@ object TagIo {
             // than as a failure.
             return Content(Tags(), null)
         }
-        return Content(Id3.read(tag), Id3.readPicture(tag))
+        return Content(Id3.read(tag), Id3.readPicture(tag), Id3.kept(tag))
     }
 
     private fun writeMp3(
@@ -96,19 +138,30 @@ object TagIo {
         out: OutputStream,
         tags: Tags,
         cover: Artwork?,
+        carry: Kept?,
     ): Boolean {
-        // Step over whatever tag is there now. The header has to be read either way, and if there
-        // is no tag those ten bytes are audio and go straight back out in front of the rest.
+        // Read whatever tag is there now: what it carries beyond the editor's fields goes into the
+        // new one. The header has to be read either way, and if there is no tag those ten bytes are
+        // audio and go straight back out in front of the rest.
         val header = ByteArray(Id3.HEADER_BYTES)
         // A file with fewer than ten bytes in it has no audio and no tag; refusing is better than
         // writing out a tag with nothing behind it, which is what a partial read here would produce.
         if (!input.readFully(header)) return false
         val total = Id3.tagSize(header)
-        if (total > Id3.HEADER_BYTES && !input.skipFully((total - Id3.HEADER_BYTES).toLong())) {
-            return false
+        var own = Id3.Kept.NONE
+        if (total > Id3.HEADER_BYTES) {
+            val tag = ByteArray(total)
+            header.copyInto(tag)
+            if (!input.readFully(tag, Id3.HEADER_BYTES, total - Id3.HEADER_BYTES)) return false
+            own = Id3.kept(tag)
+        }
+        val kept = when (carry) {
+            null -> own
+            is Id3.Kept -> carry
+            else -> Id3.Kept.from(carry.common())
         }
 
-        out.write(Id3.build(tags, cover?.bytes, cover?.mime ?: Artwork.MIME_JPEG))
+        out.write(Id3.build(tags, cover?.bytes, cover?.mime ?: Artwork.MIME_JPEG, kept))
         // With no tag to replace, those ten bytes were the start of the audio and go back in front
         // of the rest of it.
         if (total == 0) out.write(header)
@@ -179,11 +232,17 @@ object TagIo {
         out: OutputStream,
         tags: Tags,
         cover: Artwork?,
+        carry: Kept?,
     ): Boolean {
         // Reading the layout also walks the stream to the first audio byte, which is where the
         // copy below has to start from — so the parse and the seek are the same pass.
         val layout = FlacTags.readLayout(input) ?: return false
-        out.write(FlacTags.build(layout.keptBlocks, tags, cover))
+        val kept = when (carry) {
+            null -> layout.kept
+            is FlacTags.Kept -> carry
+            else -> FlacTags.Kept.from(carry.common())
+        }
+        out.write(FlacTags.build(layout.keptBlocks, tags, cover, kept))
         input.copyTo(out, BLOCK)
         return true
     }
@@ -199,21 +258,6 @@ object TagIo {
             val n = read(into, at + got, count - got)
             if (n <= 0) return false
             got += n
-        }
-        return true
-    }
-
-    /** [InputStream.skip] is allowed to skip fewer bytes than asked; a tag offset cannot be. */
-    private fun InputStream.skipFully(bytes: Long): Boolean {
-        var remaining = bytes
-        while (remaining > 0) {
-            val skipped = skip(remaining)
-            if (skipped > 0) {
-                remaining -= skipped
-            } else {
-                if (read() < 0) return false
-                remaining--
-            }
         }
         return true
     }

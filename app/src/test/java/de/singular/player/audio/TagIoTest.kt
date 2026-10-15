@@ -175,6 +175,60 @@ class TagIoTest {
         assertEquals(Tags(), content!!.tags)
     }
 
+    @Test
+    fun `a re-tag keeps the frames the editor does not own`() {
+        val bpm = Bytes().apply { byte(3); raw("120".toByteArray()) }.toByteArray()
+        val old = Id3.build(tags, null, Artwork.MIME_JPEG, Id3.Kept(listOf(Id3.Frame("TBPM", bpm, true)), "")) + audio
+        val out = ByteArrayOutputStream()
+        TagIo.write(TagFormat.MP3, ByteArrayInputStream(old), out, tags.copy(title = "New"), null)
+
+        val content = TagIo.read(TagFormat.MP3, ByteArrayInputStream(out.toByteArray()))!!
+        assertEquals("New", content.tags.title)
+        val kept = (content.kept as Id3.Kept).frames
+        assertEquals(listOf("TBPM"), kept.map { it.id })
+        assertArrayEquals(bpm, kept.single().body)
+    }
+
+    @Test
+    fun `a render carries the original's frames, not the new file's`() {
+        val bpm = Bytes().apply { byte(3); raw("120".toByteArray()) }.toByteArray()
+        val carry = Id3.Kept(listOf(Id3.Frame("TBPM", bpm, true)), "")
+        val out = ByteArrayOutputStream()
+        // The new file is untagged; what it gets is what the original carried.
+        TagIo.write(TagFormat.MP3, ByteArrayInputStream(audio), out, tags, null, carry)
+        val written = out.toByteArray()
+        val kept = TagIo.read(TagFormat.MP3, ByteArrayInputStream(written))!!.kept as Id3.Kept
+        assertEquals(listOf("TBPM"), kept.frames.map { it.id })
+        // And the audio behind it is untouched.
+        assertArrayEquals(audio, written.copyOfRange(written.size - audio.size, written.size))
+    }
+
+    @Test
+    fun `a convert from mp3 to flac takes tempo, key, composer and date across`() {
+        val mp3Kept = Id3.Kept.from(TagIo.Common("196", "C", "Kreuder", "2019-03-22T20:59"))
+        val newFlac = FlacTags.build(byteArrayOf(0x00, 0x00, 0x00, 34) + ByteArray(34), Tags(), null) + audio
+
+        val out = ByteArrayOutputStream()
+        TagIo.write(TagFormat.FLAC, ByteArrayInputStream(newFlac), out, tags.copy(year = "2019"), null, mp3Kept)
+        val layout = FlacTags.readLayout(ByteArrayInputStream(out.toByteArray()))!!
+
+        assertEquals(listOf("BPM=196", "INITIALKEY=C", "COMPOSER=Kreuder"), layout.kept.entries)
+        assertEquals("2019-03-22T20:59", layout.kept.date)
+    }
+
+    @Test
+    fun `a convert from flac to mp3 takes them back`() {
+        val flacKept = FlacTags.Kept(listOf("BPM=196", "INITIALKEY=C", "COMPOSER=Kreuder", "MOOD=calm"), "2019-03-22")
+
+        val out = ByteArrayOutputStream()
+        TagIo.write(TagFormat.MP3, ByteArrayInputStream(audio), out, tags.copy(year = "2019"), null, flacKept)
+        val kept = TagIo.read(TagFormat.MP3, ByteArrayInputStream(out.toByteArray()))!!.kept!!
+
+        // MOOD has no agreed ID3 frame, so it stays behind.
+        assertEquals(TagIo.Common("196", "C", "Kreuder", "2019-03-22"), kept.common())
+        assertEquals(listOf("TBPM", "TKEY", "TCOM"), (kept as Id3.Kept).frames.map { it.id })
+    }
+
     // ---- helpers ----------------------------------------------------------------------------
 
     private fun taggedMp3(tags: Tags, audio: ByteArray): ByteArray =

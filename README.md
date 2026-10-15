@@ -48,6 +48,8 @@ block). The audio is copied byte for byte and never decoded, so re-tagging a los
 generation of quality and a lossless one costs no encode. A trailing ID3v1 tag is removed on the way
 past, since it can only contradict what was just written.
 
+Whatever else a file carries is kept. Logic Pro writes tempo, key and the bounce's date and time, a desktop tagger may add a composer, and none of those has a field here — so a save rebuilds only the fields above and carries every other frame across unchanged. A normalised or converted copy gets the same, less what was measured on the old audio: an encoder's name, Apple's gapless and loudness data, replay gain. Converting between MP3 and FLAC takes tempo, key, composer and the full date across, the extra fields both formats have names for; anything with no counterpart stays behind. Older tags are read as well as current ones, including the ID3v2.2 that Logic wrote into every MP3 bounce until 2020; saving one upgrades it to v2.4.
+
 Every other format still plays, lists, favourites and moves; it just cannot be re-tagged, and the
 menu item is absent rather than present and failing.
 

@@ -2,6 +2,7 @@
 
 package de.singular.player.audio
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -141,6 +142,133 @@ class Id3Test {
         assertEquals("Rough Mix 3", read.title) // the early frames are intact and still readable
     }
 
+    // ---- v2.2, as Logic Pro wrote it until 10.5 -------------------------------------------------
+
+    @Test
+    fun `a Logic Pro v2_2 tag reads`() {
+        val read = Id3.read(logicTag())
+        assertEquals("Kasper", read.title)
+        assertEquals("Kreuder", read.artist)
+        assertEquals("2019", read.year)
+        // The comment typed in the bounce dialog, not the iTunNORM one Logic writes ahead of it.
+        assertEquals("22.03.2019", read.comment)
+    }
+
+    @Test
+    fun `a v2_2 picture reads as the cover`() {
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3, 4)
+        val pic = Bytes()
+        pic.byte(0) // encoding
+        pic.ascii("JPG")
+        pic.byte(3) // front cover
+        pic.byte(0) // empty description
+        pic.raw(jpeg)
+        val tag = v22Tag(listOf("TT2" to text("Kasper"), "PIC" to pic.toByteArray()))
+        assertArrayEquals(jpeg, Id3.readPicture(tag))
+    }
+
+    @Test
+    fun `saving a v2_2 tag keeps what the editor does not show`() {
+        val old = logicTag()
+        val rebuilt = Id3.build(Id3.read(old), null, Artwork.MIME_JPEG, Id3.kept(old))
+
+        assertEquals(4, rebuilt[3].toInt()) // upgraded to v2.4
+        assertEquals(Id3.read(old), Id3.read(rebuilt))
+        val ids = Id3.kept(rebuilt).frames.map { it.id }
+        assertTrue("TBPM" in ids)
+        assertTrue("TKEY" in ids)
+        assertTrue("TSSE" in ids)
+        // Logic's date and time, folded into the one v2.4 frame rather than dropped with the
+        // v2.3-only frames they came in.
+        assertEquals("2019-03-22T20:59", Id3.kept(rebuilt).timestamp)
+        assertTrue("TDAT" !in ids && "TIME" !in ids && "TYER" !in ids)
+    }
+
+    @Test
+    fun `a changed year replaces the old date rather than keeping its day`() {
+        val old = logicTag()
+        val rebuilt = Id3.build(Id3.read(old).copy(year = "2020"), null, Artwork.MIME_JPEG, Id3.kept(old))
+        assertEquals("2020", Id3.kept(rebuilt).timestamp)
+    }
+
+    @Test
+    fun `a new copy of the audio drops what was measured on the old`() {
+        val kept = Id3.kept(logicTag()).forNewAudio()
+        val ids = kept.frames.map { it.id }
+        assertTrue("TBPM" in ids)
+        assertTrue("TKEY" in ids)
+        assertTrue("TSSE" !in ids) // the encoder that made the old audio
+        assertTrue("COMM" !in ids) // iTunNORM, the old audio's loudness
+    }
+
+    // ---- what a rewrite carries -------------------------------------------------------------
+
+    @Test
+    fun `frames the editor does not own survive a rewrite`() {
+        val old = v23Tag("TIT2" to "Old Mix", "TBPM" to "120", "TCOM" to "Kreuder", "TORY" to "2019")
+        val rebuilt = Id3.build(Tags(title = "New Mix"), null, Artwork.MIME_JPEG, Id3.kept(old))
+        val kept = Id3.kept(rebuilt).frames.associate { it.id to it.body.drop(1).toByteArray() }
+        assertEquals("New Mix", Id3.read(rebuilt).title)
+        assertEquals("120", String(kept.getValue("TBPM"), Charsets.ISO_8859_1))
+        assertEquals("Kreuder", String(kept.getValue("TCOM"), Charsets.ISO_8859_1))
+        // A v2.3 frame v2.4 renamed goes across under its new name.
+        assertEquals("2019", String(kept.getValue("TDOR"), Charsets.ISO_8859_1))
+    }
+
+    @Test
+    fun `a frame flagged to be discarded on change is not carried`() {
+        val old = v23Tag("TBPM" to "120")
+        old[HEADER + 8] = 0x80.toByte() // v2.3 status: discard when the tag is altered
+        assertTrue(Id3.kept(old).frames.isEmpty())
+    }
+
+    @Test
+    fun `a file with only machine comments shows no comment`() {
+        val tag = v22Tag(listOf("COM" to comment("iTunNORM", " 0000030C 00000345")))
+        assertEquals("", Id3.read(tag).comment)
+    }
+
+    /**
+     * The tag on a Logic Pro X 10.4 bounce, frame for frame: Latin-1 text, the date and time split
+     * over `TYE`, `TDA` (DDMM) and `TIM` (HHMM), and Apple's loudness comment ahead of the real one.
+     */
+    private fun logicTag(): ByteArray = v22Tag(
+        listOf(
+            "TSS" to text("Logic Pro X 10.4.4"),
+            "COM" to comment("iTunNORM", " 0000030C 00000345 000015E9"),
+            "TT2" to text("Kasper"),
+            "TP1" to text("Kreuder"),
+            "TKE" to text("C"),
+            "TBP" to text("196"),
+            "COM" to comment("", "22.03.2019"),
+            "TYE" to text("2019"),
+            "TDA" to text("2203"),
+            "TIM" to text("2059"),
+        ),
+    )
+
+    /** A text frame body in Latin-1. */
+    private fun text(value: String): ByteArray = byteArrayOf(0) + value.toByteArray(Charsets.ISO_8859_1)
+
+    /** A comment body in Latin-1, in English, with [description]. */
+    private fun comment(description: String, value: String): ByteArray =
+        byteArrayOf(0) + "eng".toByteArray(Charsets.US_ASCII) +
+            description.toByteArray(Charsets.ISO_8859_1) + byteArrayOf(0) +
+            value.toByteArray(Charsets.ISO_8859_1)
+
+    /** An ID3v2.2 tag: three-character ids, three-byte plain sizes, no frame flags. */
+    private fun v22Tag(frames: List<Pair<String, ByteArray>>): ByteArray {
+        val body = Bytes()
+        frames.forEach { (id, bytes) ->
+            body.ascii(id)
+            body.byte((bytes.size shr 16) and 0xFF)
+            body.byte((bytes.size shr 8) and 0xFF)
+            body.byte(bytes.size and 0xFF)
+            body.raw(bytes)
+        }
+        return wrap(2, body.toByteArray())
+    }
+
     /** A minimal, valid ID3v2.3 tag with Latin-1 text frames — what an older tagger would write. */
     private fun v23Tag(vararg frames: Pair<String, String>): ByteArray {
         val body = Bytes()
@@ -153,19 +281,27 @@ class Id3Test {
             body.byte(0) // encoding: ISO-8859-1
             body.raw(text)
         }
-        val bodyBytes = body.toByteArray()
+        return wrap(3, body.toByteArray())
+    }
 
+    /** A tag header of [major] version around [body]. */
+    private fun wrap(major: Int, body: ByteArray): ByteArray {
         val out = Bytes()
         out.ascii("ID3")
-        out.byte(3) // major version 3
+        out.byte(major)
         out.byte(0)
         out.byte(0)
         // The tag size is synchsafe in every version, unlike the frame sizes.
-        out.byte((bodyBytes.size shr 21) and 0x7F)
-        out.byte((bodyBytes.size shr 14) and 0x7F)
-        out.byte((bodyBytes.size shr 7) and 0x7F)
-        out.byte(bodyBytes.size and 0x7F)
-        out.raw(bodyBytes)
+        out.byte((body.size shr 21) and 0x7F)
+        out.byte((body.size shr 14) and 0x7F)
+        out.byte((body.size shr 7) and 0x7F)
+        out.byte(body.size and 0x7F)
+        out.raw(body)
         return out.toByteArray()
+    }
+
+    private companion object {
+        /** Where the first frame starts: after the ten-byte tag header. */
+        const val HEADER = 10
     }
 }

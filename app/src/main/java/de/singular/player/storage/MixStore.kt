@@ -634,12 +634,14 @@ class MixStore(context: Context) {
      * original — for a change of artist name. So the new file is built in the cache directory first
      * and only replaces the original once it is whole on disk.
      *
-     * The audio is copied byte for byte and never decoded; see [TagIo.write].
+     * The audio is copied byte for byte and never decoded; see [TagIo.write]. Whatever else the
+     * file carries is kept, or [carry] instead when it is given — see there.
      */
     suspend fun writeTags(
         mix: Mix,
         tags: Tags,
         cover: Artwork?,
+        carry: TagIo.Kept? = null,
     ): Result<Mix> = withContext(Dispatchers.IO) {
         val format = mix.tagFormat
             ?: return@withContext Result.failure(
@@ -650,7 +652,7 @@ class MixStore(context: Context) {
         val built = runCatching {
             scratch.outputStream().buffered(BLOCK).use { out ->
                 resolver.openInputStream(mix.uri)?.buffered(BLOCK)?.use { input ->
-                    TagIo.write(format, input, out, tags, cover)
+                    TagIo.write(format, input, out, tags, cover, carry)
                 } ?: throw StorageException(StorageFailure.CANNOT_READ_FILE)
             }
         }
@@ -802,10 +804,14 @@ class MixStore(context: Context) {
 
         // Tags last, and never fatal. The audio is on disk and correct at this point; a file that
         // arrived without its artist name is a nuisance, while throwing away the encode over it
-        // would be a loss. WAV simply has nowhere to put them.
+        // would be a loss. WAV simply has nowhere to put them. What the original carried beyond
+        // the editor's fields goes too, less what was measured on the audio this replaced.
         val tagged = carried
             ?.takeIf { written.tagFormat != null }
-            ?.let { writeTags(written, it.tags, it.cover?.let(Artwork::of)).getOrNull() }
+            ?.let {
+                writeTags(written, it.tags, it.cover?.let(Artwork::of), it.kept?.forNewAudio())
+                    .getOrNull()
+            }
 
         Result.success(Rendered(tagged ?: written, if (mode == null) 0f else gainDb))
     }

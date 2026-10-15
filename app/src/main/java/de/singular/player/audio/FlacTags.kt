@@ -23,8 +23,10 @@ import java.io.InputStream
  *
  * `STREAMINFO`, `SEEKTABLE`, `CUESHEET` and `APPLICATION` are **copied through untouched**. They
  * describe the audio, not the tagging, and a tag editor that dropped a seek table would make long
- * files slow to scrub for no reason. `VORBIS_COMMENT` and `PICTURE` are what this app owns, so
- * whatever was there is discarded and replaced by what the editor holds. `PADDING` is dropped.
+ * files slow to scrub for no reason. `VORBIS_COMMENT` and `PICTURE` are what this app owns, so they
+ * are rebuilt from what the editor holds — but only the comment's fields the editor has a place
+ * for: every other `KEY=value` entry is carried across as it was ([Kept]), so tempo, key, composer
+ * and the like survive a save. `PADDING` is dropped.
  *
  * `STREAMINFO` must be the first block, and it stays first because the kept blocks keep their
  * order; the new comment and picture go on the end.
@@ -50,7 +52,51 @@ object FlacTags {
         val keptBlocks: ByteArray,
         val tags: Tags,
         val picture: ByteArray?,
+        val kept: Kept,
     )
+
+    /**
+     * The comment entries the editor does not own, exactly as they were, and the full `DATE` —
+     * see [Id3.Kept], which this mirrors for the other format.
+     */
+    class Kept internal constructor(
+        internal val entries: List<String>,
+        internal val date: String,
+    ) : TagIo.Kept {
+
+        /** Without replay gain, the encoder and Apple's audio comments — see [Id3.Kept.forNewAudio]. */
+        override fun forNewAudio(): Kept = Kept(
+            entries.filterNot { entry ->
+                val key = entry.substringBefore('=').uppercase()
+                AUDIO_KEYS.any { key.startsWith(it) }
+            },
+            date,
+        )
+
+        override fun common(): TagIo.Common {
+            fun value(vararg keys: String) = entries.firstOrNull { entry ->
+                entry.substringBefore('=').uppercase() in keys
+            }?.substringAfter('=')?.trim().orEmpty()
+            return TagIo.Common(
+                bpm = value("BPM"),
+                key = value("INITIALKEY", "KEY"),
+                composer = value("COMPOSER"),
+                date = date,
+            )
+        }
+
+        companion object {
+            val NONE = Kept(emptyList(), "")
+
+            /** The entries for what another format carried — see [TagIo.Common]. */
+            fun from(common: TagIo.Common): Kept = Kept(
+                listOf("BPM" to common.bpm, "INITIALKEY" to common.key, "COMPOSER" to common.composer)
+                    .filter { it.second.isNotEmpty() }
+                    .map { (key, value) -> "$key=$value" },
+                common.date,
+            )
+        }
+    }
 
     /**
      * Walk the metadata blocks of [input], which must be positioned at the very start of the file.
@@ -69,6 +115,7 @@ object FlacTags {
 
         val kept = Bytes(1024)
         var tags = Tags()
+        var keptEntries = Kept.NONE
         var picture: ByteArray? = null
         var at = 4L
 
@@ -87,7 +134,10 @@ object FlacTags {
             at += 4 + length
 
             when (type) {
-                TYPE_VORBIS_COMMENT -> tags = readComment(body) ?: tags
+                TYPE_VORBIS_COMMENT -> readComment(body)?.let { (read, entries) ->
+                    tags = read
+                    keptEntries = entries
+                }
                 TYPE_PICTURE -> if (picture == null) picture = readPicture(body)
                 TYPE_PADDING -> Unit // dropped; see the class doc
                 else -> {
@@ -104,6 +154,7 @@ object FlacTags {
             keptBlocks = kept.toByteArray(),
             tags = tags,
             picture = picture,
+            kept = keptEntries,
         )
     }
 
@@ -113,8 +164,8 @@ object FlacTags {
      *
      * The caller writes this and then copies the original's audio from [Layout.audioStart] onward.
      */
-    fun build(kept: ByteArray, tags: Tags, cover: Artwork?): ByteArray {
-        val comment = commentBlock(tags)
+    fun build(kept: ByteArray, tags: Tags, cover: Artwork?, entries: Kept = Kept.NONE): ByteArray {
+        val comment = commentBlock(tags, entries)
         val picture = cover?.let(::pictureBlock)
 
         val out = Bytes(kept.size + comment.size + (picture?.size ?: 0) + 8)
@@ -161,7 +212,7 @@ object FlacTags {
      * Field names are conventionally uppercase and are compared case-insensitively by everything
      * that reads them, so the lookup here folds case rather than trusting the writer.
      */
-    private fun readComment(body: ByteArray): Tags? {
+    private fun readComment(body: ByteArray): Pair<Tags, Kept>? {
         var p = 0
         val vendorLength = u32le(body, p) ?: return null
         p += 4 + vendorLength
@@ -176,6 +227,8 @@ object FlacTags {
         var genre = ""
         var track = ""
         var comment = ""
+        var date = ""
+        val others = ArrayList<String>()
 
         repeat(count) {
             val length = u32le(body, p) ?: return@repeat
@@ -185,20 +238,27 @@ object FlacTags {
             p += length
             val key = entry.substringBefore('=', "").uppercase()
             val value = entry.substringAfter('=', "").trim()
+            if (key !in OWNED) {
+                others += entry
+                return@repeat
+            }
             if (value.isEmpty()) return@repeat
             when (key) {
                 "TITLE" -> title = value
                 "ARTIST" -> artist = value
                 "ALBUM" -> album = value
                 "ALBUMARTIST", "ALBUM ARTIST" -> albumArtist = value
-                "DATE", "YEAR" -> year = YEAR.find(value)?.value.orEmpty()
+                "DATE", "YEAR" -> {
+                    year = YEAR.find(value)?.value.orEmpty()
+                    date = value
+                }
                 "GENRE" -> genre = value
                 "TRACKNUMBER" -> track = value.substringBefore('/').trim()
                 "COMMENT", "DESCRIPTION" -> comment = value
             }
         }
 
-        return Tags(
+        val tags = Tags(
             title = title,
             artist = artist,
             album = album,
@@ -208,18 +268,22 @@ object FlacTags {
             track = track,
             comment = comment,
         )
+        return tags to Kept(others, date)
     }
 
-    private fun commentBlock(tags: Tags): ByteArray {
+    private fun commentBlock(tags: Tags, kept: Kept): ByteArray {
         val fields = buildList {
             if (tags.title.isNotEmpty()) add("TITLE=${tags.title}")
             if (tags.artist.isNotEmpty()) add("ARTIST=${tags.artist}")
             if (tags.album.isNotEmpty()) add("ALBUM=${tags.album}")
             if (tags.albumArtist.isNotEmpty()) add("ALBUMARTIST=${tags.albumArtist}")
-            if (tags.year.isNotEmpty()) add("DATE=${tags.year}")
+            // The full date while it still agrees with the form's year — see [Id3.Kept.timestamp].
+            val date = kept.date.takeIf { tags.year.isNotEmpty() && it.startsWith(tags.year) }
+            if (tags.year.isNotEmpty()) add("DATE=${date ?: tags.year}")
             if (tags.genre.isNotEmpty()) add("GENRE=${tags.genre}")
             if (tags.track.isNotEmpty()) add("TRACKNUMBER=${tags.track}")
             if (tags.comment.isNotEmpty()) add("COMMENT=${tags.comment}")
+            addAll(kept.entries)
         }
         val vendor = VENDOR.toByteArray(Charsets.UTF_8)
         val encoded = fields.map { it.toByteArray(Charsets.UTF_8) }
@@ -328,4 +392,13 @@ object FlacTags {
     private const val VENDOR = "Demo Reel"
 
     private val YEAR = Regex("""\d{4}""")
+
+    /** The comment keys the editor owns; every other entry is carried — see [Kept]. */
+    private val OWNED = setOf(
+        "TITLE", "ARTIST", "ALBUM", "ALBUMARTIST", "ALBUM ARTIST", "DATE", "YEAR", "GENRE",
+        "TRACKNUMBER", "COMMENT", "DESCRIPTION",
+    )
+
+    /** Key prefixes measured on the audio, dropped from a new copy's tags. */
+    private val AUDIO_KEYS = listOf("REPLAYGAIN_", "R128_", "ENCODER", "ITUNNORM", "ITUNSMPB", "ITUNPGAP")
 }
