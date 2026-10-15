@@ -8,6 +8,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
@@ -627,12 +628,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Remember the folder the system picker just handed back, and show it. */
     fun onFolderPicked(uri: Uri) {
+        val before = store.root?.let(::treeId)
         if (!store.setRoot(uri)) {
             _message.value = Message.Text(R.string.msg_folder_not_kept)
             return
         }
+        // A recent is a path relative to the root, so under a different root it names a different
+        // file or none. Five entries are not worth carrying across; the same folder picked again
+        // keeps them, since its paths have not changed. The mix to restore after a killed process
+        // is the same kind of key — a mix of the old root still loaded is not written again, as it
+        // has no key under the new one.
+        if (before != treeId(uri)) {
+            _recents.value = recentStore.clear()
+            lastPlayedStore.clear()
+        }
         openRoot()
     }
+
+    /** The folder a tree uri grants, which stays the same when the same folder is granted again. */
+    private fun treeId(uri: Uri): String? =
+        runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
 
     private fun openRoot() {
         val remembered = store.rootWasSet

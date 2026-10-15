@@ -65,6 +65,9 @@ class Recents(context: Context) {
     fun rename(from: String, to: String): List<String> =
         write(all().map { if (it.under(from)) to + it.removePrefix(from) else it })
 
+    /** Forget every entry — for a new root, whose files these keys do not describe. */
+    fun clear(): List<String> = write(emptyList())
+
     private fun write(keys: List<String>): List<String> {
         val capped = keys.take(LIMIT)
         prefs.edit { putString(KEY, JSONArray(capped).toString()) }
