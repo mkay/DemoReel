@@ -92,7 +92,7 @@ import de.singular.player.ui.ApplyModeDialog
 import de.singular.player.ui.ControlShape
 import de.singular.player.ui.CoverLoader
 import de.singular.player.ui.DemoReelTheme
-import de.singular.player.ui.DiscardChangesDialog
+import de.singular.player.ui.UnsavedChangesDialog
 import de.singular.player.ui.LibraryScreen
 import de.singular.player.ui.LibraryTab
 import de.singular.player.ui.LocalCoverLoader
@@ -322,7 +322,13 @@ class MainActivity : AppCompatActivity() {
                     // people to dismiss dialogs.
                     var confirmingDiscard by remember { mutableStateOf(false) }
                     if (confirmingDiscard) {
-                        DiscardChangesDialog(
+                        UnsavedChangesDialog(
+                            // The save leaves the editor itself, once the file is written (see the
+                            // effect above); a failed one stays, with the form intact, to try again.
+                            onSave = {
+                                confirmingDiscard = false
+                                vm.saveEditor()
+                            },
                             onDiscard = {
                                 confirmingDiscard = false
                                 leaveEditor()

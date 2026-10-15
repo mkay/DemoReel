@@ -272,17 +272,24 @@ fun ApplyModeDialog(onPick: (ApplyMode) -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-/** Asked when leaving an editor with unsaved changes — see the back chain in MainActivity. */
+/**
+ * Asked when leaving an editor with unsaved changes — see the back chain in MainActivity.
+ *
+ * Save is offered here, not only discard: back on a changed form is as often "done" as "never
+ * mind", and sending someone back into the form to find the button at the bottom is a detour.
+ * Discard sits apart from Save, on the dismiss side, so the two that differ most are not neighbours.
+ */
 @Composable
-fun DiscardChangesDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
+fun UnsavedChangesDialog(onSave: () -> Unit, onDiscard: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.editor_discard_title)) },
-        text = { Text(stringResource(R.string.editor_discard_body)) },
+        title = { Text(stringResource(R.string.editor_unsaved_title)) },
+        text = { Text(stringResource(R.string.editor_unsaved_body)) },
         confirmButton = {
-            TextButton(onClick = onDiscard) { Text(stringResource(R.string.action_discard)) }
+            TextButton(onClick = onSave) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = {
+            TextButton(onClick = onDiscard) { Text(stringResource(R.string.action_discard)) }
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_keep_editing)) }
         },
     )

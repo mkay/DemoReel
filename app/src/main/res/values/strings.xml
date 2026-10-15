@@ -125,8 +125,8 @@
         one can still be played, renamed and marked as a favourite.</string>
     <string name="editor_unreadable">This file is not the format its name says it is, so its tags
         cannot be read or safely rewritten.</string>
-    <string name="editor_discard_title">Discard changes?</string>
-    <string name="editor_discard_body">The changes you made have not been written to the file.</string>
+    <string name="editor_unsaved_title">Save changes?</string>
+    <string name="editor_unsaved_body">The changes you made have not been written to the file.</string>
 
     <string name="apply_defaults_title">Apply defaults</string>
     <string name="apply_defaults_body">What should happen to fields that already have something in

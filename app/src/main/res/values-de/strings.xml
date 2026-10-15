@@ -114,8 +114,8 @@
         Diese hier lässt sich weiterhin abspielen, umbenennen und als Favorit markieren.</string>
     <string name="editor_unreadable">Diese Datei ist nicht das Format, das ihr Name behauptet — ihre
         Tags lassen sich weder lesen noch gefahrlos neu schreiben.</string>
-    <string name="editor_discard_title">Änderungen verwerfen?</string>
-    <string name="editor_discard_body">Deine Änderungen wurden noch nicht in die Datei
+    <string name="editor_unsaved_title">Änderungen speichern?</string>
+    <string name="editor_unsaved_body">Deine Änderungen wurden noch nicht in die Datei
         geschrieben.</string>
 
     <string name="apply_defaults_title">Vorgaben anwenden</string>
