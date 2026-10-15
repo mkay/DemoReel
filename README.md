@@ -18,7 +18,7 @@ Requires Android 8.0 (API 26) or newer.
 
 ## Screenshots
 
-<img src="docs/screenshot.png" alt="Demo Reel's library, with a folder of mixes and one in the mini player, and the tag editor with a cover, title, artist and album" width="640" />
+<img src="docs/screenshot.png" alt="Demo Reel's library, with folders of versions and dated mixes with their covers, and the player with a cover, the waveform and the Level, Convert and Note actions" width="640" />
 
 ---
 
