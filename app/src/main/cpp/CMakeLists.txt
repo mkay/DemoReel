@@ -9,6 +9,14 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(demoreel_mp3 C)
 
+# The build paths would otherwise be written into the debug info, and from there into the build ID
+# that survives stripping — so two checkouts in different directories would build different .so
+# files from the same commit. Mapped to fixed names, the output depends on the sources alone, which
+# is what lets a rebuild of a tagged commit match the published APK.
+add_compile_options(
+        "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=src"
+        "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+
 # vector/ is here only because fft.c includes its header unconditionally; the SSE code inside it is
 # behind HAVE_XMMINTRIN_H, which config.h leaves undefined, so on every ABI built here it compiles
 # to an empty object.
