@@ -3,7 +3,7 @@
   Demo Reel
 </h1>
 
-An Android player and tag editor for your own demo mixes. This is not a traditional music player.
+Demo Reel is an audio file manager for your demos, bounces and takes. It comes with a player, a tag editor and Android Auto.
 
 It's another app I built for myself. I use it to manage my own demos and mixes without the device's media library spilling into them. It is probably only useful if you are a recording musician, or otherwise have a lot of audio files to organise — which is why I'm not adding yet another audio app to F-Droid. If it fits what you do, download and sideload the APK from the [releases page](https://github.com/mkay/DemoReel/releases), or [open an issue](https://github.com/mkay/DemoReel/issues) if you want it on F-Droid.
 
