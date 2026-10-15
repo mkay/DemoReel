@@ -25,8 +25,8 @@ import java.io.InputStream
  * describe the audio, not the tagging, and a tag editor that dropped a seek table would make long
  * files slow to scrub for no reason. `VORBIS_COMMENT` and `PICTURE` are what this app owns, so they
  * are rebuilt from what the editor holds — but only the comment's fields the editor has a place
- * for: every other `KEY=value` entry is carried across as it was ([Kept]), so tempo, key, composer
- * and the like survive a save. `PADDING` is dropped.
+ * for: every other `KEY=value` entry is carried across as it was ([Kept]), so replay gain, lyrics
+ * and whatever else a tagger put there survive a save. `PADDING` is dropped.
  *
  * `STREAMINFO` must be the first block, and it stays first because the kept blocks keep their
  * order; the new comment and picture go on the end.
@@ -61,7 +61,7 @@ object FlacTags {
      */
     class Kept internal constructor(
         internal val entries: List<String>,
-        internal val date: String,
+        override val date: String,
     ) : TagIo.Kept {
 
         /** Without replay gain, the encoder and Apple's audio comments — see [Id3.Kept.forNewAudio]. */
@@ -73,28 +73,11 @@ object FlacTags {
             date,
         )
 
-        override fun common(): TagIo.Common {
-            fun value(vararg keys: String) = entries.firstOrNull { entry ->
-                entry.substringBefore('=').uppercase() in keys
-            }?.substringAfter('=')?.trim().orEmpty()
-            return TagIo.Common(
-                bpm = value("BPM"),
-                key = value("INITIALKEY", "KEY"),
-                composer = value("COMPOSER"),
-                date = date,
-            )
-        }
+        /** These entries with [date] in place of their own — for a convert from another format. */
+        fun withDate(date: String): Kept = Kept(entries, date)
 
         companion object {
             val NONE = Kept(emptyList(), "")
-
-            /** The entries for what another format carried — see [TagIo.Common]. */
-            fun from(common: TagIo.Common): Kept = Kept(
-                listOf("BPM" to common.bpm, "INITIALKEY" to common.key, "COMPOSER" to common.composer)
-                    .filter { it.second.isNotEmpty() }
-                    .map { (key, value) -> "$key=$value" },
-                common.date,
-            )
         }
     }
 
@@ -228,6 +211,9 @@ object FlacTags {
         var track = ""
         var comment = ""
         var date = ""
+        var composer = ""
+        var bpm = ""
+        var musicalKey = ""
         val others = ArrayList<String>()
 
         repeat(count) {
@@ -255,6 +241,9 @@ object FlacTags {
                 "GENRE" -> genre = value
                 "TRACKNUMBER" -> track = value.substringBefore('/').trim()
                 "COMMENT", "DESCRIPTION" -> comment = value
+                "COMPOSER" -> composer = value
+                "BPM" -> bpm = value
+                "INITIALKEY", "KEY" -> musicalKey = value
             }
         }
 
@@ -267,6 +256,9 @@ object FlacTags {
             genre = genre,
             track = track,
             comment = comment,
+            composer = composer,
+            bpm = bpm,
+            key = musicalKey,
         )
         return tags to Kept(others, date)
     }
@@ -277,12 +269,15 @@ object FlacTags {
             if (tags.artist.isNotEmpty()) add("ARTIST=${tags.artist}")
             if (tags.album.isNotEmpty()) add("ALBUM=${tags.album}")
             if (tags.albumArtist.isNotEmpty()) add("ALBUMARTIST=${tags.albumArtist}")
-            // The full date while it still agrees with the form's year — see [Id3.Kept.timestamp].
+            // The full date while it still agrees with the form's year — see [TagIo.Kept.date].
             val date = kept.date.takeIf { tags.year.isNotEmpty() && it.startsWith(tags.year) }
             if (tags.year.isNotEmpty()) add("DATE=${date ?: tags.year}")
             if (tags.genre.isNotEmpty()) add("GENRE=${tags.genre}")
             if (tags.track.isNotEmpty()) add("TRACKNUMBER=${tags.track}")
             if (tags.comment.isNotEmpty()) add("COMMENT=${tags.comment}")
+            if (tags.composer.isNotEmpty()) add("COMPOSER=${tags.composer}")
+            if (tags.bpm.isNotEmpty()) add("BPM=${tags.bpm}")
+            if (tags.key.isNotEmpty()) add("INITIALKEY=${tags.key}")
             addAll(kept.entries)
         }
         val vendor = VENDOR.toByteArray(Charsets.UTF_8)
@@ -396,7 +391,7 @@ object FlacTags {
     /** The comment keys the editor owns; every other entry is carried — see [Kept]. */
     private val OWNED = setOf(
         "TITLE", "ARTIST", "ALBUM", "ALBUMARTIST", "ALBUM ARTIST", "DATE", "YEAR", "GENRE",
-        "TRACKNUMBER", "COMMENT", "DESCRIPTION",
+        "TRACKNUMBER", "COMMENT", "DESCRIPTION", "COMPOSER", "BPM", "INITIALKEY", "KEY",
     )
 
     /** Key prefixes measured on the audio, dropped from a new copy's tags. */

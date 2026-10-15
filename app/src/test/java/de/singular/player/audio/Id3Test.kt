@@ -30,6 +30,9 @@ class Id3Test {
         genre = "Electronic",
         track = "4",
         comment = "needs a longer fade",
+        composer = "Kreuder",
+        bpm = "112",
+        key = "F#m",
     )
 
     @Test
@@ -152,6 +155,8 @@ class Id3Test {
         assertEquals("2019", read.year)
         // The comment typed in the bounce dialog, not the iTunNORM one Logic writes ahead of it.
         assertEquals("22.03.2019", read.comment)
+        assertEquals("196", read.bpm)
+        assertEquals("C", read.key)
     }
 
     @Test
@@ -175,12 +180,11 @@ class Id3Test {
         assertEquals(4, rebuilt[3].toInt()) // upgraded to v2.4
         assertEquals(Id3.read(old), Id3.read(rebuilt))
         val ids = Id3.kept(rebuilt).frames.map { it.id }
-        assertTrue("TBPM" in ids)
-        assertTrue("TKEY" in ids)
-        assertTrue("TSSE" in ids)
+        assertTrue("TSSE" in ids) // no field for it, so carried
+        assertTrue("COMM" in ids) // iTunNORM, likewise
         // Logic's date and time, folded into the one v2.4 frame rather than dropped with the
         // v2.3-only frames they came in.
-        assertEquals("2019-03-22T20:59", Id3.kept(rebuilt).timestamp)
+        assertEquals("2019-03-22T20:59", Id3.kept(rebuilt).date)
         assertTrue("TDAT" !in ids && "TIME" !in ids && "TYER" !in ids)
     }
 
@@ -188,36 +192,35 @@ class Id3Test {
     fun `a changed year replaces the old date rather than keeping its day`() {
         val old = logicTag()
         val rebuilt = Id3.build(Id3.read(old).copy(year = "2020"), null, Artwork.MIME_JPEG, Id3.kept(old))
-        assertEquals("2020", Id3.kept(rebuilt).timestamp)
+        assertEquals("2020", Id3.kept(rebuilt).date)
     }
 
     @Test
     fun `a new copy of the audio drops what was measured on the old`() {
         val kept = Id3.kept(logicTag()).forNewAudio()
         val ids = kept.frames.map { it.id }
-        assertTrue("TBPM" in ids)
-        assertTrue("TKEY" in ids)
         assertTrue("TSSE" !in ids) // the encoder that made the old audio
         assertTrue("COMM" !in ids) // iTunNORM, the old audio's loudness
+        assertEquals("2019-03-22T20:59", kept.date) // the date is the music's, and stays
     }
 
     // ---- what a rewrite carries -------------------------------------------------------------
 
     @Test
     fun `frames the editor does not own survive a rewrite`() {
-        val old = v23Tag("TIT2" to "Old Mix", "TBPM" to "120", "TCOM" to "Kreuder", "TORY" to "2019")
+        val old = v23Tag("TIT2" to "Old Mix", "TPUB" to "Singular", "TEXT" to "Kreuder", "TORY" to "2019")
         val rebuilt = Id3.build(Tags(title = "New Mix"), null, Artwork.MIME_JPEG, Id3.kept(old))
         val kept = Id3.kept(rebuilt).frames.associate { it.id to it.body.drop(1).toByteArray() }
         assertEquals("New Mix", Id3.read(rebuilt).title)
-        assertEquals("120", String(kept.getValue("TBPM"), Charsets.ISO_8859_1))
-        assertEquals("Kreuder", String(kept.getValue("TCOM"), Charsets.ISO_8859_1))
+        assertEquals("Singular", String(kept.getValue("TPUB"), Charsets.ISO_8859_1))
+        assertEquals("Kreuder", String(kept.getValue("TEXT"), Charsets.ISO_8859_1))
         // A v2.3 frame v2.4 renamed goes across under its new name.
         assertEquals("2019", String(kept.getValue("TDOR"), Charsets.ISO_8859_1))
     }
 
     @Test
     fun `a frame flagged to be discarded on change is not carried`() {
-        val old = v23Tag("TBPM" to "120")
+        val old = v23Tag("TPUB" to "Singular")
         old[HEADER + 8] = 0x80.toByte() // v2.3 status: discard when the tag is altered
         assertTrue(Id3.kept(old).frames.isEmpty())
     }

@@ -177,6 +177,7 @@ fun TagEditorScreen(
         Field(R.string.field_album_artist, edit.tags.albumArtist) { v ->
             onEdit { it.copy(albumArtist = v) }
         }
+        Field(R.string.field_composer, edit.tags.composer) { v -> onEdit { it.copy(composer = v) } }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // Side by side because both are short and numeric, and a full-width field for four
             // digits invites the question of what else is meant to go in it.
@@ -194,6 +195,21 @@ fun TagEditorScreen(
             ) { v -> onEdit { it.copy(track = v) } }
         }
         Field(R.string.field_genre, edit.tags.genre) { v -> onEdit { it.copy(genre = v) } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // A pair for the same reason as year and track: both short, and read together — what a
+            // bounce from Logic states about the music before anyone has listened to it.
+            Field(
+                R.string.field_bpm,
+                edit.tags.bpm,
+                Modifier.weight(1f),
+                numeric = true,
+            ) { v -> onEdit { it.copy(bpm = v) } }
+            Field(
+                R.string.field_key,
+                edit.tags.key,
+                Modifier.weight(1f),
+            ) { v -> onEdit { it.copy(key = v) } }
+        }
         Field(
             R.string.field_comment,
             edit.tags.comment,

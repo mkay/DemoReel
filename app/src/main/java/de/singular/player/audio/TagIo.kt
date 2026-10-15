@@ -48,28 +48,15 @@ object TagIo {
         /** Without what was measured on the audio, for a copy whose audio is new. */
         fun forNewAudio(): Kept
 
-        /** The part every format has a name for — see [Common]. */
-        fun common(): Common
+        /**
+         * The recording date as precisely as the file stated it, `2019-03-22T20:59` or just
+         * `2019`. [Tags.year] is only the year, and writing that back alone would drop the day and
+         * the time Logic stamped on the bounce, so a rewrite writes this instead while the year
+         * still agrees. The one thing kept that a change of format takes across: everything else
+         * here has no counterpart in the other format's tags, and a convert leaves it behind.
+         */
+        val date: String
     }
-
-    /**
-     * What survives a change of format: the few fields beyond [Tags] that ID3 and Vorbis comments
-     * both have an agreed name for, and the full recording date. Everything else a format carries
-     * has no counterpart in the other, and a convert leaves it behind.
-     *
-     * | here       | ID3    | Vorbis comment |
-     * |------------|--------|----------------|
-     * | [bpm]      | `TBPM` | `BPM`          |
-     * | [key]      | `TKEY` | `INITIALKEY`   |
-     * | [composer] | `TCOM` | `COMPOSER`     |
-     * | [date]     | `TDRC` | `DATE`         |
-     */
-    data class Common(
-        val bpm: String = "",
-        val key: String = "",
-        val composer: String = "",
-        val date: String = "",
-    )
 
     /**
      * Everything [format] can tell us about the file behind [input], which must be positioned at
@@ -95,8 +82,8 @@ object TagIo {
      *
      * Everything else the file carries is kept — see [Kept]. [carry] null means the file's own,
      * which is what an edit wants. A render passes the original's instead, because the file it is
-     * tagging is new and carries nothing of its own yet; one from another format brings what the
-     * two formats share ([Common]) and nothing else.
+     * tagging is new and carries nothing of its own yet; one from another format brings only its
+     * [Kept.date].
      *
      * Returns false if the input is not the format it claims to be, in which case [out] holds
      * whatever was written before that was discovered and the caller must throw it away rather than
@@ -158,7 +145,7 @@ object TagIo {
         val kept = when (carry) {
             null -> own
             is Id3.Kept -> carry
-            else -> Id3.Kept.from(carry.common())
+            else -> Id3.Kept.NONE.withDate(carry.date)
         }
 
         out.write(Id3.build(tags, cover?.bytes, cover?.mime ?: Artwork.MIME_JPEG, kept))
@@ -240,7 +227,7 @@ object TagIo {
         val kept = when (carry) {
             null -> layout.kept
             is FlacTags.Kept -> carry
-            else -> FlacTags.Kept.from(carry.common())
+            else -> FlacTags.Kept.NONE.withDate(carry.date)
         }
         out.write(FlacTags.build(layout.keptBlocks, tags, cover, kept))
         input.copyTo(out, BLOCK)

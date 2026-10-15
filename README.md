@@ -42,13 +42,13 @@ transport is one button; hold it for repeat, double-tap it to start again from t
 **Mini player.** The mix in hand, at the foot of every screen, so playback that outlives the screen
 it was started from can still be stopped.
 
-**Tag editor.** Title, artist, album, album artist, year, track, genre, comment and cover art,
+**Tag editor.** Title, artist, album, album artist, composer, year, track, genre, tempo, key, comment and cover art,
 written back into the file itself — **MP3** (ID3v2.4) and **FLAC** (Vorbis comment + `PICTURE`
 block). The audio is copied byte for byte and never decoded, so re-tagging a lossy file costs no
 generation of quality and a lossless one costs no encode. A trailing ID3v1 tag is removed on the way
 past, since it can only contradict what was just written.
 
-Whatever else a file carries is kept. Logic Pro writes tempo, key and the bounce's date and time, a desktop tagger may add a composer, and none of those has a field here — so a save rebuilds only the fields above and carries every other frame across unchanged. A normalised or converted copy gets the same, less what was measured on the old audio: an encoder's name, Apple's gapless and loudness data, replay gain. Converting between MP3 and FLAC takes tempo, key, composer and the full date across, the extra fields both formats have names for; anything with no counterpart stays behind. Older tags are read as well as current ones, including the ID3v2.2 that Logic wrote into every MP3 bounce until 2020; saving one upgrades it to v2.4.
+Whatever else a file carries is kept. Logic Pro stamps the bounce's date and time and its own name, Apple adds gapless and loudness data, a desktop tagger may add lyrics or a publisher, and none of those has a field here — so a save rebuilds only the fields above and carries every other frame across unchanged, the full date included while the year still matches. A normalised or converted copy gets the same, less what was measured on the old audio: an encoder's name, Apple's gapless and loudness data, replay gain. Between MP3 and FLAC, every field above goes across along with the full date; extras with no counterpart in the other format stay behind. Older tags are read as well as current ones, including the ID3v2.2 that Logic wrote into every MP3 bounce until 2020; saving one upgrades it to v2.4.
 
 Every other format still plays, lists, favourites and moves; it just cannot be re-tagged, and the
 menu item is absent rather than present and failing.

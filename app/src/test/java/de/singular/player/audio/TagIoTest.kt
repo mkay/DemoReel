@@ -177,56 +177,59 @@ class TagIoTest {
 
     @Test
     fun `a re-tag keeps the frames the editor does not own`() {
-        val bpm = Bytes().apply { byte(3); raw("120".toByteArray()) }.toByteArray()
-        val old = Id3.build(tags, null, Artwork.MIME_JPEG, Id3.Kept(listOf(Id3.Frame("TBPM", bpm, true)), "")) + audio
+        val publisher = Bytes().apply { byte(3); raw("Singular".toByteArray()) }.toByteArray()
+        val old = Id3.build(tags, null, Artwork.MIME_JPEG, Id3.Kept(listOf(Id3.Frame("TPUB", publisher, true)), "")) + audio
         val out = ByteArrayOutputStream()
         TagIo.write(TagFormat.MP3, ByteArrayInputStream(old), out, tags.copy(title = "New"), null)
 
         val content = TagIo.read(TagFormat.MP3, ByteArrayInputStream(out.toByteArray()))!!
         assertEquals("New", content.tags.title)
         val kept = (content.kept as Id3.Kept).frames
-        assertEquals(listOf("TBPM"), kept.map { it.id })
-        assertArrayEquals(bpm, kept.single().body)
+        assertEquals(listOf("TPUB"), kept.map { it.id })
+        assertArrayEquals(publisher, kept.single().body)
     }
 
     @Test
     fun `a render carries the original's frames, not the new file's`() {
-        val bpm = Bytes().apply { byte(3); raw("120".toByteArray()) }.toByteArray()
-        val carry = Id3.Kept(listOf(Id3.Frame("TBPM", bpm, true)), "")
+        val publisher = Bytes().apply { byte(3); raw("Singular".toByteArray()) }.toByteArray()
+        val carry = Id3.Kept(listOf(Id3.Frame("TPUB", publisher, true)), "")
         val out = ByteArrayOutputStream()
         // The new file is untagged; what it gets is what the original carried.
         TagIo.write(TagFormat.MP3, ByteArrayInputStream(audio), out, tags, null, carry)
         val written = out.toByteArray()
         val kept = TagIo.read(TagFormat.MP3, ByteArrayInputStream(written))!!.kept as Id3.Kept
-        assertEquals(listOf("TBPM"), kept.frames.map { it.id })
+        assertEquals(listOf("TPUB"), kept.frames.map { it.id })
         // And the audio behind it is untouched.
         assertArrayEquals(audio, written.copyOfRange(written.size - audio.size, written.size))
     }
 
     @Test
-    fun `a convert from mp3 to flac takes tempo, key, composer and date across`() {
-        val mp3Kept = Id3.Kept.from(TagIo.Common("196", "C", "Kreuder", "2019-03-22T20:59"))
+    fun `a convert from mp3 to flac takes the full date across`() {
+        // Tempo, key and composer are fields, and go with the rest of [Tags]; the date is the one
+        // kept thing a change of format takes along.
+        val fromMp3 = Id3.Kept.NONE.withDate("2019-03-22T20:59")
         val newFlac = FlacTags.build(byteArrayOf(0x00, 0x00, 0x00, 34) + ByteArray(34), Tags(), null) + audio
+        val logic = tags.copy(year = "2019", bpm = "196", key = "C", composer = "Kreuder")
 
         val out = ByteArrayOutputStream()
-        TagIo.write(TagFormat.FLAC, ByteArrayInputStream(newFlac), out, tags.copy(year = "2019"), null, mp3Kept)
+        TagIo.write(TagFormat.FLAC, ByteArrayInputStream(newFlac), out, logic, null, fromMp3)
         val layout = FlacTags.readLayout(ByteArrayInputStream(out.toByteArray()))!!
 
-        assertEquals(listOf("BPM=196", "INITIALKEY=C", "COMPOSER=Kreuder"), layout.kept.entries)
+        assertEquals(logic, layout.tags)
         assertEquals("2019-03-22T20:59", layout.kept.date)
+        assertTrue(layout.kept.entries.isEmpty())
     }
 
     @Test
-    fun `a convert from flac to mp3 takes them back`() {
-        val flacKept = FlacTags.Kept(listOf("BPM=196", "INITIALKEY=C", "COMPOSER=Kreuder", "MOOD=calm"), "2019-03-22")
+    fun `a convert from flac to mp3 leaves fields with no counterpart behind`() {
+        val fromFlac = FlacTags.Kept(listOf("MOOD=calm"), "2019-03-22")
 
         val out = ByteArrayOutputStream()
-        TagIo.write(TagFormat.MP3, ByteArrayInputStream(audio), out, tags.copy(year = "2019"), null, flacKept)
-        val kept = TagIo.read(TagFormat.MP3, ByteArrayInputStream(out.toByteArray()))!!.kept!!
+        TagIo.write(TagFormat.MP3, ByteArrayInputStream(audio), out, tags.copy(year = "2019"), null, fromFlac)
+        val kept = TagIo.read(TagFormat.MP3, ByteArrayInputStream(out.toByteArray()))!!.kept as Id3.Kept
 
-        // MOOD has no agreed ID3 frame, so it stays behind.
-        assertEquals(TagIo.Common("196", "C", "Kreuder", "2019-03-22"), kept.common())
-        assertEquals(listOf("TBPM", "TKEY", "TCOM"), (kept as Id3.Kept).frames.map { it.id })
+        assertEquals("2019-03-22", kept.date)
+        assertTrue(kept.frames.isEmpty())
     }
 
     // ---- helpers ----------------------------------------------------------------------------

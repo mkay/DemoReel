@@ -30,10 +30,10 @@ package de.singular.player.audio
  *
  * ## What a rewrite keeps
  *
- * The eight fields of [Tags] and the cover are what the editor owns, and they are rebuilt from the
- * form. **Every other frame is carried across unchanged** — see [kept]. A file from Logic or a
- * desktop tagger carries tempo, key, composer and more that this app has no field for, and a save
- * that dropped them would cost the user data they never saw on screen. What is not carried: frames
+ * The fields of [Tags] and the cover are what the editor owns, and they are rebuilt from the form.
+ * **Every other frame is carried across unchanged** — see [kept]. A file from Logic or a desktop
+ * tagger carries more than this app has fields for — the encoder, Apple's gapless data, lyrics,
+ * a publisher — and a save that dropped them would cost the user data they never saw on screen. What is not carried: frames
  * a v2.4 tag may not hold, frames flagged to be discarded when the tag changes, and frames whose
  * bytes are compressed, encrypted or grouped, which cannot be moved without being understood.
  *
@@ -94,6 +94,9 @@ object Id3 {
         var year = ""
         var genre = ""
         var track = ""
+        var composer = ""
+        var bpm = ""
+        var key = ""
 
         frames(tag).forEach { f ->
             when (f.id) {
@@ -103,10 +106,13 @@ object Id3 {
                 "TPE2" -> albumArtist = text(f.body)
                 // v2.4 replaced TYER with TDRC, whose value is a whole timestamp; either way the
                 // four digits are the part a demo mix has any use for. The rest of the timestamp is
-                // not lost on a save — see [Kept.timestamp].
+                // not lost on a save — see [TagIo.Kept.date].
                 "TDRC", "TYER" -> year = YEAR.find(text(f.body))?.value.orEmpty()
                 "TCON" -> genre = plainGenre(text(f.body))
                 "TRCK" -> track = text(f.body).substringBefore('/').trim()
+                "TCOM" -> composer = text(f.body)
+                "TBPM" -> bpm = text(f.body)
+                "TKEY" -> key = text(f.body)
             }
         }
 
@@ -119,6 +125,9 @@ object Id3 {
             genre = genre,
             track = track,
             comment = theComment(frames(tag))?.let { commentText(it.body) }.orEmpty(),
+            composer = composer,
+            bpm = bpm,
+            key = key,
         )
     }
 
@@ -161,12 +170,7 @@ object Id3 {
      */
     class Kept internal constructor(
         internal val frames: List<Frame>,
-        /**
-         * The recording date as precisely as the file stated it, `2019-03-22T20:59` or just `2019`.
-         * [Tags.year] is only the year, and writing that back alone would drop the day and the time
-         * Logic stamped on the bounce; [build] writes this instead while the year still agrees.
-         */
-        internal val timestamp: String,
+        override val date: String,
     ) : TagIo.Kept {
 
         /**
@@ -178,30 +182,13 @@ object Id3 {
          * would be confidently wrong: a player trusting `iTunSMPB` would trim the wrong number of
          * samples, and replay gain would undo the normalise it sits on.
          */
-        override fun forNewAudio(): Kept = Kept(frames.filterNot { it.describesAudio() }, timestamp)
+        override fun forNewAudio(): Kept = Kept(frames.filterNot { it.describesAudio() }, date)
 
-        override fun common(): TagIo.Common {
-            fun value(id: String) = frames.firstOrNull { it.id == id }?.let { text(it.body) }.orEmpty()
-            return TagIo.Common(
-                bpm = value("TBPM"),
-                key = value("TKEY"),
-                composer = value("TCOM"),
-                date = timestamp,
-            )
-        }
+        /** These frames with [date] in place of their own — for a convert from another format. */
+        fun withDate(date: String): Kept = Kept(frames, date)
 
         companion object {
             val NONE = Kept(emptyList(), "")
-
-            /** The frames for what another format carried — see [TagIo.Common]. */
-            fun from(common: TagIo.Common): Kept {
-                val frames = listOf("TBPM" to common.bpm, "TKEY" to common.key, "TCOM" to common.composer)
-                    .filter { it.second.isNotEmpty() }
-                    .map { (id, value) ->
-                        Frame(id, byteArrayOf(ENC_UTF8.toByte()) + value.toByteArray(Charsets.UTF_8), true)
-                    }
-                return Kept(frames, common.date)
-            }
         }
     }
 
@@ -374,11 +361,14 @@ object Id3 {
         frames.textFrame("TPE2", tags.albumArtist)
         // The file's own date and time while it still agrees with the year in the form; the year
         // alone once it has been changed, since the day and time were the old year's.
-        val date = kept.timestamp.takeIf { tags.year.isNotEmpty() && it.startsWith(tags.year) }
+        val date = kept.date.takeIf { tags.year.isNotEmpty() && it.startsWith(tags.year) }
         frames.textFrame("TDRC", date ?: tags.year)
         frames.textFrame("TCON", tags.genre)
         frames.textFrame("TRCK", tags.track)
         frames.commentFrame(tags.comment)
+        frames.textFrame("TCOM", tags.composer)
+        frames.textFrame("TBPM", tags.bpm)
+        frames.textFrame("TKEY", tags.key)
         if (cover != null && cover.isNotEmpty()) frames.pictureFrame(cover, coverMime)
         kept.frames.forEach { f ->
             frames.frameHeader(f.id, f.body.size)
@@ -568,11 +558,13 @@ object Id3 {
     private const val V24_FORMAT_BITS = 0x4F
 
     /** The frames the editor rebuilds from [Tags] and the cover — never carried. */
-    private val OWNED = setOf("TIT2", "TPE1", "TALB", "TPE2", "TDRC", "TYER", "TCON", "TRCK", "APIC")
+    private val OWNED = setOf(
+        "TIT2", "TPE1", "TALB", "TPE2", "TDRC", "TYER", "TCON", "TRCK", "TCOM", "TBPM", "TKEY", "APIC",
+    )
 
     /**
      * v2.3 frames v2.4 has no place for. The date and time parts are folded into `TDRC` instead
-     * (see [Kept.timestamp]); the rest were replaced by frames of a different layout.
+     * (see [TagIo.Kept.date]); the rest were replaced by frames of a different layout.
      */
     private val V23_ONLY = setOf("TDAT", "TIME", "TRDA", "TSIZ", "EQUA", "RVAD")
 

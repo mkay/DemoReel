@@ -30,6 +30,9 @@ class FlacTagsTest {
         genre = "Electronic",
         track = "4",
         comment = "needs a longer fade",
+        composer = "Kreuder",
+        bpm = "112",
+        key = "F#m",
     )
 
     /** 34 bytes of STREAMINFO — the contents do not matter here, only that it is preserved. */
@@ -162,15 +165,15 @@ class FlacTagsTest {
             kept = header(0, streamInfo.size, last = false) + streamInfo,
             tags = tags.copy(year = "2026"),
             cover = null,
-            entries = FlacTags.Kept(listOf("BPM=120", "REPLAYGAIN_TRACK_GAIN=-3.1 dB"), "2026-03-11"),
+            entries = FlacTags.Kept(listOf("MOOD=calm", "REPLAYGAIN_TRACK_GAIN=-3.1 dB"), "2026-03-11"),
         ) + AUDIO
         val layout = FlacTags.readLayout(ByteArrayInputStream(file))!!
         assertEquals(tags, layout.tags)
-        assertEquals(listOf("BPM=120", "REPLAYGAIN_TRACK_GAIN=-3.1 dB"), layout.kept.entries)
+        assertEquals(listOf("MOOD=calm", "REPLAYGAIN_TRACK_GAIN=-3.1 dB"), layout.kept.entries)
         // The full date is written while the year agrees with it.
         assertEquals("2026-03-11", layout.kept.date)
-        // A copy with new audio keeps the tempo and drops the gain measured on the old.
-        assertEquals(listOf("BPM=120"), layout.kept.forNewAudio().entries)
+        // A copy with new audio keeps the mood and drops the gain measured on the old.
+        assertEquals(listOf("MOOD=calm"), layout.kept.forNewAudio().entries)
     }
 
     // ---- helpers ----------------------------------------------------------------------------

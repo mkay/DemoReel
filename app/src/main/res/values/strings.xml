@@ -118,6 +118,9 @@
     <string name="field_track">Track</string>
     <string name="field_genre">Genre</string>
     <string name="field_comment">Comment</string>
+    <string name="field_composer">Composer</string>
+    <string name="field_bpm">BPM</string>
+    <string name="field_key">Key</string>
     <string name="editor_use_defaults">Fill from defaults…</string>
     <string name="editor_rewrite_notice">Saving rewrites the file. The audio is copied untouched —
         only the information in front of it changes.</string>

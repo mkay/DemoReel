@@ -107,6 +107,9 @@
     <string name="field_track">Track</string>
     <string name="field_genre">Genre</string>
     <string name="field_comment">Kommentar</string>
+    <string name="field_composer">Komponist</string>
+    <string name="field_bpm">BPM</string>
+    <string name="field_key">Tonart</string>
     <string name="editor_use_defaults">Aus Vorgaben füllen…</string>
     <string name="editor_rewrite_notice">Speichern schreibt die Datei neu. Das Audiomaterial wird
         unverändert kopiert — nur die Informationen davor ändern sich.</string>

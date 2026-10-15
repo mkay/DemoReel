@@ -67,13 +67,22 @@ data class Tags(
      * a listing shows it, and the editor reads the file properly before showing anything.
      */
     val comment: String = "",
+    /**
+     * Who wrote it, the tempo and the musical key — what a bounce from Logic carries and a demo is
+     * often looked up by. Like [comment], only [de.singular.player.audio.TagIo] fills these: the
+     * platform's reader has a composer key but no tempo or key, and a listing shows none of them.
+     */
+    val composer: String = "",
+    val bpm: String = "",
+    val key: String = "",
     val durationMs: Long = 0,
 ) {
     /** Whether the file carries any text at all, as against being an untagged bounce. */
     val isEmpty: Boolean
         get() = title.isEmpty() && artist.isEmpty() && album.isEmpty() &&
             albumArtist.isEmpty() && year.isEmpty() && genre.isEmpty() &&
-            track.isEmpty() && comment.isEmpty()
+            track.isEmpty() && comment.isEmpty() && composer.isEmpty() && bpm.isEmpty() &&
+            key.isEmpty()
 
     companion object {
 
