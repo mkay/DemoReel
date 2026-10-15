@@ -1163,4 +1163,16 @@ class MainActivity : AppCompatActivity() {
             vm.playFromSearch(query, extras)
         }
     }
+
+    /**
+     * Back from another app: list the folder again, since files may have changed while we were away.
+     *
+     * Pulling down reveals the search rather than refreshing, so this is the only way a change made
+     * elsewhere — a file copied in, a tag edited on a computer — reaches an already-open folder. Not
+     * `onResume`: that also runs for a dialog or the share sheet passing over, which changes nothing.
+     */
+    override fun onRestart() {
+        super.onRestart()
+        vm.refresh()
+    }
 }
